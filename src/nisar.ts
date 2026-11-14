@@ -281,9 +281,9 @@ export async function listNisarGranules(c: AppContext) {
 	try {
 		granules = await fetchCmrGranules(snapped, from && to ? { from, to } : null);
 	} catch (error) {
-		if (c.env.fieldnotes_db) {
+		if (c.env.DB) {
 			try {
-				const stored = await granulesFromD1(c.env.fieldnotes_db, snapped, from, to);
+				const stored = await granulesFromD1(c.env.DB, snapped, from, to);
 				if (stored.length > 0) {
 					return c.json({ ...collection, granules: stored }, 200, { "X-Cache": "D1" });
 				}

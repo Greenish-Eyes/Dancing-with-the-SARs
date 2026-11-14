@@ -2,6 +2,11 @@ const sites = {
 	amazon: {
 		name: "Amazon floodplain",
 		theme: "seasonal flooding and forest structure along a large river floodplain",
+		region: "AMAZONAS, BRAZIL",
+		headline: ["THE", "RHYTHM", "OF WATER"],
+		eyebrow: "LIVE STUDY / WETLAND DYNAMICS",
+		story: "Following seasonal inundation through the forest canopy.",
+		fieldNote: "Seasonal river levels may shape wetland extent. Compare calibrated backscatter before treating a visual difference as change.",
 		center: [-3.1, -60.0],
 		zoom: 7,
 		bounds: [-61, -4, -59, -2],
@@ -9,6 +14,11 @@ const sites = {
 	louisiana: {
 		name: "Mississippi Delta",
 		theme: "coastal wetlands, marsh loss, and river delta flooding",
+		region: "LOUISIANA, USA",
+		headline: ["WHERE", "LAND", "MEETS TIDE"],
+		eyebrow: "LIVE STUDY / COASTAL WETLANDS",
+		story: "Following the shifting edge between tidal marsh and open water.",
+		fieldNote: "Wetland boundaries respond to tides, storms, and sediment supply. Use repeat calibrated observations to investigate possible change.",
 		center: [29.5, -90.0],
 		zoom: 7,
 		bounds: [-91, 28, -89, 31],
@@ -16,6 +26,11 @@ const sites = {
 	iceland: {
 		name: "South Iceland",
 		theme: "glaciers, snow and ice, and volcanic terrain",
+		region: "SOUTHERN REGION, ICELAND",
+		headline: ["ICE", "ON THE", "MOVE"],
+		eyebrow: "LIVE STUDY / GLACIER DYNAMICS",
+		story: "Exploring radar observations over ice, meltwater, and volcanic terrain.",
+		fieldNote: "Radar returns over ice vary with melt, roughness, and snow conditions. A browse image alone cannot identify glacier motion.",
 		center: [64.0, -19.0],
 		zoom: 7,
 		bounds: [-20, 63, -18, 65],
@@ -23,6 +38,11 @@ const sites = {
 	jakarta: {
 		name: "Jakarta basin",
 		theme: "dense urban area with land subsidence and coastal flooding",
+		region: "JAKARTA, INDONESIA",
+		headline: ["A CITY", "AT THE", "WATER'S EDGE"],
+		eyebrow: "LIVE STUDY / URBAN CHANGE",
+		story: "Exploring radar observations across a growing coastal megacity.",
+		fieldNote: "Urban radar returns depend on buildings, surface moisture, and viewing geometry. Measuring subsidence requires calibrated interferometric data.",
 		center: [-6.2, 106.8],
 		zoom: 8,
 		bounds: [106, -7, 108, -5],
@@ -33,14 +53,9 @@ const map = L.map("map", { zoomControl: true, attributionControl: false }).setVi
 	sites.amazon.center,
 	sites.amazon.zoom,
 );
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
-	subdomains: "abcd",
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+	attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
 	maxZoom: 19,
-}).addTo(map);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
-	subdomains: "abcd",
-	maxZoom: 19,
-	opacity: 0.75,
 }).addTo(map);
 
 const footprintLayer = L.featureGroup().addTo(map);
@@ -63,8 +78,7 @@ const ui = {
 	timeline: document.getElementById("timeline-track"),
 	sceneList: document.getElementById("scene-list"),
 	selectedIndex: document.getElementById("selected-index"),
-	selectedTitle: document.getElementById("selected-title"),
-	selectedMeta: document.getElementById("selected-meta"),
+	selectedDateCopy: document.getElementById("selected-date-copy"),
 	previewLabel: document.getElementById("preview-channel-label"),
 	preview: document.getElementById("preview-content"),
 	channel: document.getElementById("channel-select"),
@@ -75,6 +89,19 @@ const ui = {
 	explainPanel: document.getElementById("explain-panel"),
 	feedList: document.getElementById("feed-list"),
 	feedStatus: document.getElementById("feed-status"),
+	siteRegion: document.getElementById("site-region"),
+	siteName: document.getElementById("site-name"),
+	storyEyebrow: document.getElementById("story-eyebrow"),
+	storyFirst: document.getElementById("story-first"),
+	storyEmphasis: document.getElementById("story-emphasis"),
+	storyLast: document.getElementById("story-last"),
+	storyCopy: document.getElementById("story-copy"),
+	fieldNoteCopy: document.getElementById("field-note-copy"),
+	panelSceneCount: document.getElementById("panel-scene-count"),
+	latestPassDate: document.getElementById("latest-pass-date"),
+	latestPassHint: document.getElementById("latest-pass-hint"),
+	selectedDateCopy: document.getElementById("selected-date-copy"),
+	timelinePlay: document.getElementById("timeline-play"),
 };
 
 let granules = [];
@@ -85,6 +112,7 @@ let requestNumber = 0;
 let explainNumber = 0;
 let pendingSelectId = null;
 let explainKey = null;
+let timelineTimer = null;
 const polygonById = new Map();
 
 function formatDate(value, options = { month: "short", day: "numeric", year: "numeric" }) {
@@ -395,8 +423,9 @@ function renderSelection() {
 	const granule = getSelectedGranule();
 	if (!granule) {
 		ui.selectedIndex.textContent = "—";
-		ui.selectedTitle.textContent = "No NISAR passes in this view";
-		ui.selectedMeta.textContent = "Try another area or a wider date range.";
+		ui.selectedDateCopy.textContent = "Choose an observation";
+		ui.latestPassDate.textContent = "No pass in view";
+		ui.latestPassHint.textContent = "Try another area or time window";
 		ui.compare.disabled = true;
 		ui.explain.disabled = true;
 		ui.compareCount.textContent = "0 passes";
@@ -409,8 +438,9 @@ function renderSelection() {
 
 	const selectedNumber = granules.indexOf(granule) + 1;
 	ui.selectedIndex.textContent = `${String(selectedNumber).padStart(2, "0")} / ${String(granules.length).padStart(2, "0")}`;
-	ui.selectedTitle.textContent = formatDate(granule.timeStart);
-	ui.selectedMeta.textContent = `${granule.title} · Provisional L2 GCOV`;
+	ui.selectedDateCopy.textContent = formatDate(granule.timeStart);
+	ui.latestPassDate.textContent = formatDate(granules[0].timeStart, { month: "short", day: "numeric", year: "numeric" });
+	ui.latestPassHint.textContent = "Latest catalog acquisition in this map view";
 	ui.compare.disabled = granules.length < 2;
 	ui.compareCount.textContent = granules.length > 1 ? `${granules.length - 1} earlier` : "1 pass";
 	ui.compare.classList.toggle("comparison-active", compareMode);
@@ -430,6 +460,7 @@ function renderSelection() {
 
 function renderResults() {
 	ui.sceneCount.textContent = String(granules.length).padStart(2, "0");
+	ui.panelSceneCount.textContent = String(granules.length).padStart(2, "0");
 	renderFootprints();
 	renderSceneList();
 	renderTimeline();
@@ -437,6 +468,7 @@ function renderResults() {
 }
 
 async function searchArea() {
+	stopTimelinePlayback();
 	const thisRequest = ++requestNumber;
 	const [west, south, east, north] = currentBounds();
 	const days = Number(ui.dateWindow.value);
@@ -546,6 +578,7 @@ async function loadFeed() {
 function chooseSite(siteId) {
 	const site = sites[siteId];
 	if (!site) return;
+	updateStory(site);
 	ui.site.value = siteId;
 	document.querySelectorAll(".place-button").forEach((button) => {
 		button.classList.toggle("selected", button.dataset.site === siteId);
@@ -554,6 +587,28 @@ function chooseSite(siteId) {
 	siteMarker.setLatLng(site.center);
 	updateMapCenter();
 	searchArea();
+}
+
+function updateStory(site) {
+	ui.siteRegion.textContent = site.region;
+	ui.siteName.textContent = site.name;
+	ui.storyEyebrow.textContent = site.eyebrow;
+	ui.storyFirst.textContent = site.headline[0];
+	ui.storyEmphasis.textContent = site.headline[1];
+	ui.storyLast.textContent = site.headline[2];
+	ui.storyCopy.textContent = site.story;
+	ui.fieldNoteCopy.textContent = site.fieldNote;
+}
+
+function stopTimelinePlayback() {
+	if (timelineTimer !== null) {
+		window.clearInterval(timelineTimer);
+		timelineTimer = null;
+	}
+	ui.timelinePlay.classList.remove("is-playing");
+	ui.timelinePlay.setAttribute("aria-label", "Play observation timeline");
+	ui.timelinePlay.title = "Play observation timeline";
+	ui.timelinePlay.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z" /></svg>';
 }
 
 document.querySelectorAll(".place-button").forEach((button) => {
@@ -573,6 +628,22 @@ ui.compare.addEventListener("click", () => {
 	compareMode = !compareMode;
 	renderSelection();
 });
+ui.timelinePlay.addEventListener("click", () => {
+	if (timelineTimer !== null) {
+		stopTimelinePlayback();
+		return;
+	}
+	if (granules.length < 2) return;
+	ui.timelinePlay.classList.add("is-playing");
+	ui.timelinePlay.setAttribute("aria-label", "Pause observation timeline");
+	ui.timelinePlay.title = "Pause observation timeline";
+	ui.timelinePlay.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7z M15 5h4v14h-4z" /></svg>';
+	timelineTimer = window.setInterval(() => {
+		const selectedIndex = granules.findIndex((granule) => granule.id === selectedId);
+		const nextIndex = selectedIndex <= 0 ? granules.length - 1 : selectedIndex - 1;
+		selectGranule(granules[nextIndex].id);
+	}, 1400);
+});
 map.on("moveend", updateMapCenter);
 map.on("moveend", () => {
 	const site = sites[ui.site.value];
@@ -584,5 +655,6 @@ map.on("moveend", () => {
 });
 
 updateMapCenter();
+updateStory(sites[ui.site.value]);
 searchArea();
 loadFeed();

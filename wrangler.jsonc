@@ -28,9 +28,14 @@
 			"/openapi.json"
 		]
 	},
+	"r2_buckets": [
+		{
+			"binding": "IMAGES"
+		}
+	],
 	"d1_databases": [
 		{
-			"binding": "fieldnotes_db",
+			"binding": "DB",
 			"database_name": "fieldnotes-db",
 			"database_id": "b40b433b-6193-4b0a-b566-448d33bfa37f",
 			"remote": true

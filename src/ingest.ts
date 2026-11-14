@@ -74,14 +74,14 @@ async function logRun(
 
 /** Check CMR for each study site and keep any pass we have not seen before. */
 export async function ingestAllSites(env: Env) {
-	if (!env.fieldnotes_db) {
+	if (!env.DB) {
 		console.error("Ingest skipped: no D1 binding.");
 		return;
 	}
 	const now = Date.now();
 	for (const [siteId, site] of Object.entries(SITES) as [SiteId, (typeof SITES)[SiteId]][]) {
 		try {
-			const existing = await env.fieldnotes_db
+			const existing = await env.DB
 				.prepare("SELECT COUNT(*) AS n FROM granules WHERE site = ?")
 				.bind(siteId)
 				.first<{ n: number }>();
@@ -92,13 +92,13 @@ export async function ingestAllSites(env: Env) {
 				{ from: isoDate(now - days * 24 * 60 * 60 * 1000), to: isoDate(now) },
 				PAGE_SIZE,
 			);
-			const inserted = await storeGranules(env.fieldnotes_db, siteId, granules, firstRun, now);
-			await logRun(env.fieldnotes_db, now, siteId, "ok", granules.length, inserted);
+			const inserted = await storeGranules(env.DB, siteId, granules, firstRun, now);
+			await logRun(env.DB, now, siteId, "ok", granules.length, inserted);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown ingest error";
 			console.error(`Ingest failed for ${siteId}`, error);
 			try {
-				await logRun(env.fieldnotes_db, now, siteId, "error", 0, 0, message);
+				await logRun(env.DB, now, siteId, "error", 0, 0, message);
 			} catch (logError) {
 				console.error("Could not log ingest failure", logError);
 			}
@@ -117,7 +117,7 @@ type FeedRow = {
 
 /** GET /api/nisar/feed — newest stored passes across the study sites. */
 export async function passFeed(c: AppContext) {
-	if (!c.env.fieldnotes_db) {
+	if (!c.env.DB) {
 		return c.json({ lastChecked: null, passes: [] });
 	}
 	const siteParam = c.req.query("site");
@@ -126,7 +126,7 @@ export async function passFeed(c: AppContext) {
 
 	try {
 		const [passes, last] = await Promise.all([
-			c.env.fieldnotes_db
+			c.env.DB
 				.prepare(
 					`SELECT id, site, title, time_start, first_seen_at,
 					        (backfill = 0 AND first_seen_at > ?1) AS is_new
@@ -136,7 +136,7 @@ export async function passFeed(c: AppContext) {
 				)
 				.bind(Date.now() - NEW_PASS_WINDOW_MS, site, limit)
 				.all<FeedRow>(),
-			c.env.fieldnotes_db
+			c.env.DB
 				.prepare("SELECT MAX(ran_at) AS ran_at FROM ingest_runs WHERE status = 'ok'")
 				.first<{ ran_at: number | null }>(),
 		]);
