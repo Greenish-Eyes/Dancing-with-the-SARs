@@ -102,6 +102,7 @@ const ui = {
 	previewLabel: document.getElementById("preview-channel-label"),
 	preview: document.getElementById("preview-content"),
 	channel: document.getElementById("channel-select"),
+	channelAvailability: document.getElementById("channel-availability-list"),
 	compare: document.getElementById("compare-button"),
 	compareCount: document.getElementById("compare-count"),
 	download: document.getElementById("download-link"),
@@ -185,6 +186,13 @@ function selectGranule(id) {
 	selectedId = id;
 	compareMode = false;
 	renderResults();
+	if (timelineTimer !== null) {
+		ui.timeline.querySelector(".timeline-item.active")?.scrollIntoView({
+			block: "nearest",
+			inline: "center",
+			behavior: "smooth",
+		});
+	}
 }
 
 function getSelectedGranule() {
@@ -271,23 +279,56 @@ function renderPreview(granule) {
 	}
 
 	if (compareMode) {
-		const previous = granules[granules.indexOf(granule) + 1];
-		if (previous && granule.browseUrl && previous.browseUrl) {
-			ui.previewLabel.textContent = "PASS-TO-PASS QUICKLOOK";
+		const pair = comparePair(granule);
+		if (pair) {
+			const beforeUrl = pair.channel?.before.href ?? pair.before.browseUrl;
+			const afterUrl = pair.channel?.after.href ?? pair.after.browseUrl;
+			const layerLabel = pair.channel
+				? `FREQUENCY ${pair.channel.frequency} · ${pair.channel.polarization}`
+				: "GEOGRAPHIC QUICKLOOK";
+			ui.previewLabel.textContent = `PASS-TO-PASS SWIPE · ${layerLabel}`;
 			const comparison = document.createElement("div");
-			comparison.className = "compare-preview";
-			for (const [scene, label] of [[previous, "PREVIOUS"], [granule, "SELECTED"]]) {
-				const figure = document.createElement("figure");
+			comparison.className = "compare-swipe";
+			comparison.style.setProperty("--compare-split", "50%");
+			for (const [scene, url, side, label] of [
+				[pair.before, beforeUrl, "earlier", "EARLIER"],
+				[pair.after, afterUrl, "later", "NEWER"],
+			]) {
 				const image = document.createElement("img");
-				image.src = browseImageUrl(scene.browseUrl);
+				image.className = `compare-image compare-${side}`;
+				image.src = browseImageUrl(url);
 				image.alt = `NISAR radar quicklook from ${formatDate(scene.timeStart)}`;
 				image.loading = "lazy";
-				const caption = document.createElement("figcaption");
-				caption.textContent = `${label} · ${formatDate(scene.timeStart, { month: "short", day: "numeric", year: "2-digit" })}`;
-				image.addEventListener("error", () => figure.classList.add("image-unavailable"), { once: true });
-				figure.append(image, caption);
-				comparison.append(figure);
+				comparison.append(image);
+				const dateLabel = document.createElement("span");
+				dateLabel.className = `compare-date compare-date-${side}`;
+				dateLabel.textContent = `${label} · ${formatDate(scene.timeStart, { month: "short", day: "numeric", year: "2-digit" })}`;
+				comparison.append(dateLabel);
 			}
+			if (pair.channelFallback) {
+				const note = document.createElement("span");
+				note.className = "compare-mode-note";
+				note.textContent = "This channel is not linked for both passes; showing geographic quicklooks.";
+				comparison.append(note);
+			}
+			const sliderLabel = document.createElement("label");
+			sliderLabel.className = "compare-slider-label";
+			sliderLabel.textContent = "Reveal newer pass";
+			const slider = document.createElement("input");
+			slider.className = "compare-slider";
+			slider.type = "range";
+			slider.min = "0";
+			slider.max = "100";
+			slider.value = "50";
+			slider.setAttribute(
+				"aria-label",
+				`Reveal newer pass from ${formatDate(pair.after.timeStart)} against earlier pass from ${formatDate(pair.before.timeStart)}`,
+			);
+			slider.addEventListener("input", () => {
+				comparison.style.setProperty("--compare-split", `${slider.value}%`);
+			});
+			sliderLabel.append(slider);
+			comparison.append(sliderLabel);
 			ui.preview.append(comparison);
 			return;
 		}
@@ -332,7 +373,28 @@ function renderChannelOptions(granule) {
 		option.textContent = `Frequency ${channel.frequency} · ${channel.polarization}`;
 		ui.channel.append(option);
 	}
-	ui.channel.disabled = !granule || !granule.browseUrl;
+	ui.channelAvailability.replaceChildren();
+	const channels = granule?.browseChannels ?? [];
+	if (channels.length === 0) {
+		const empty = document.createElement("span");
+		empty.className = "channel-empty";
+		empty.textContent = granule ? "No polarization browse channels linked for this pass." : "Choose a pass to check channel availability.";
+		ui.channelAvailability.append(empty);
+	} else {
+		for (const channel of channels) {
+			const chip = document.createElement("span");
+			chip.className = "channel-chip";
+			const polarization = { HHHH: "HH", HVHV: "HV" }[channel.polarization] ?? channel.polarization;
+			chip.textContent = `F${channel.frequency} · ${polarization}`;
+			chip.title = `Frequency ${channel.frequency} · ${channel.polarization}`;
+			ui.channelAvailability.append(chip);
+		}
+	}
+	ui.channelAvailability.setAttribute(
+		"aria-label",
+		channels.length ? `Available polarization browse layers: ${channels.map((item) => `${item.frequency} ${item.polarization}`).join(", ")}` : "No polarization browse channels available",
+	);
+	ui.channel.disabled = !granule || (!granule.browseUrl && channels.length === 0);
 	if (selectedChannel !== "quicklook" && !granule?.browseChannels.some(
 		(channel) => `${channel.frequency}-${channel.polarization}` === selectedChannel,
 	)) {
@@ -344,8 +406,32 @@ function renderChannelOptions(granule) {
 function comparePair(granule) {
 	if (!granule) return null;
 	const previous = granules[granules.indexOf(granule) + 1];
-	if (!previous || !granule.browseUrl || !previous.browseUrl) return null;
-	return { before: previous, after: granule };
+	if (!previous) return null;
+	if (selectedChannel !== "quicklook") {
+		const beforeChannel = previous.browseChannels.find(
+			(channel) => `${channel.frequency}-${channel.polarization}` === selectedChannel,
+		);
+		const afterChannel = granule.browseChannels.find(
+			(channel) => `${channel.frequency}-${channel.polarization}` === selectedChannel,
+		);
+		if (beforeChannel && afterChannel) {
+			return {
+				before: previous,
+				after: granule,
+				channel: { frequency: afterChannel.frequency, polarization: afterChannel.polarization, before: beforeChannel, after: afterChannel },
+				channelFallback: false,
+			};
+		}
+	}
+	if (granule.browseUrl && previous.browseUrl) {
+		return {
+			before: previous,
+			after: granule,
+			channel: null,
+			channelFallback: selectedChannel !== "quicklook",
+		};
+	}
+	return null;
 }
 
 function describePlace() {
@@ -421,7 +507,7 @@ function showExplanation(kicker, paragraphs, footnote, state = "ready") {
 
 async function explainSelectedChange() {
 	const pair = comparePair(getSelectedGranule());
-	if (!pair) return;
+	if (!pair?.before.browseUrl || !pair.after.browseUrl) return;
 	const key = `${pair.before.id}:${pair.after.id}`;
 	const thisRequest = ++explainNumber;
 	explainKey = key;
@@ -473,7 +559,6 @@ async function explainSelectedChange() {
 function renderSelection() {
 	const granule = getSelectedGranule();
 	if (!granule) {
-		renderRadarContext(null);
 		ui.selectedIndex.textContent = "—";
 		ui.selectedDateCopy.textContent = "Choose an observation";
 		ui.latestPassDate.textContent = "No pass in view";
@@ -484,21 +569,23 @@ function renderSelection() {
 		ui.download.classList.add("disabled");
 		ui.download.removeAttribute("href");
 		renderChannelOptions(null);
+		renderRadarContext(null);
 		renderPreview(null);
 		return;
 	}
 
+	renderChannelOptions(granule);
 	renderRadarContext(granule);
 	const selectedNumber = granules.indexOf(granule) + 1;
 	ui.selectedIndex.textContent = `${String(selectedNumber).padStart(2, "0")} / ${String(granules.length).padStart(2, "0")}`;
 	ui.selectedDateCopy.textContent = formatDate(granule.timeStart);
 	ui.latestPassDate.textContent = formatDate(granules[0].timeStart, { month: "short", day: "numeric", year: "numeric" });
 	ui.latestPassHint.textContent = "Latest catalog acquisition in this map view";
-	ui.compare.disabled = granules.length < 2;
+	ui.compare.disabled = !comparePair(granule);
 	ui.compareCount.textContent = granules.length > 1 ? `${granules.length - 1} earlier` : "1 pass";
 	ui.compare.classList.toggle("comparison-active", compareMode);
 	const pair = comparePair(granule);
-	ui.explain.disabled = !pair || ui.explain.classList.contains("busy");
+	ui.explain.disabled = !pair?.before.browseUrl || !pair.after.browseUrl || ui.explain.classList.contains("busy");
 	if (explainKey && (!pair || explainKey !== `${pair.before.id}:${pair.after.id}`)) hideExplanation();
 	if (granule.downloadUrl) {
 		ui.download.href = granule.downloadUrl;
@@ -507,7 +594,6 @@ function renderSelection() {
 		ui.download.removeAttribute("href");
 		ui.download.classList.add("disabled");
 	}
-	renderChannelOptions(granule);
 	renderPreview(granule);
 }
 
@@ -689,6 +775,7 @@ ui.timelinePlay.addEventListener("click", () => {
 		return;
 	}
 	if (granules.length < 2) return;
+	selectGranule(granules[granules.length - 1].id);
 	ui.timelinePlay.classList.add("is-playing");
 	ui.timelinePlay.setAttribute("aria-label", "Pause observation timeline");
 	ui.timelinePlay.title = "Pause observation timeline";

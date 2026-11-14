@@ -2,7 +2,7 @@
 
 Surface Signals is an interactive map for exploring real NISAR scene coverage at four study areas and anywhere else on the map. It searches NASA's Common Metadata Repository (CMR) for the provisional Level 2 Geocoded Polarimetric Covariance (GCOV) collection, then displays scene footprints, acquisition dates, ASF browse images, and links to the source products.
 
-The map uses Esri World Imagery. Drag or zoom to an area and choose **Search this area** to look up its NISAR passes. Choose a study site or a date window from 90 days through five years, or search all dates, to refresh the catalog results. Up to the 100 most recent scenes are shown per map extent. Select a footprint, timeline point, or scene to inspect the available browse images. When two or more passes are available, **Compare passes** places their browse images side by side.
+The map uses Esri World Imagery. Drag or zoom to an area and choose **Search this area** to look up its NISAR passes. Choose a study site or a date window from 90 days through five years, or search all dates, to refresh the catalog results. Up to the 100 most recent scenes are shown per map extent. Select a footprint, timeline point, or scene to inspect the available browse images. When two or more passes are available, **Compare passes** opens a swipe comparison between their quicklooks; the play control animates chronologically through the timeline. Available polarimetric browse channels are called out for each selected pass. Site-specific radar context is presented as a hypothesis, not a measured change.
 
 ## Project layout
 
