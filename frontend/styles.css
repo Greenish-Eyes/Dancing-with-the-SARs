@@ -118,6 +118,7 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .metric-card strong { color: #eff2e7; font: 600 17px var(--display); }
 .radar-note { margin-top: 16px; }
 .radar-note p { margin: 7px 0 0; color: #d3d9ca; font-size: 11px; line-height: 1.6; }
+.radar-context-pass { display: block; margin-top: 8px; color: #899482; font: 7px var(--mono); letter-spacing: .5px; }
 .field-note { margin-top: 10px; padding: 9px 11px; border: 1px solid rgb(228 237 214 / 14%); background: rgb(255 255 255 / 3%); }
 .field-note-heading, .feed-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .field-note-heading, .feed-heading, .scene-details > summary, .feed-section > summary { list-style: none; cursor: pointer; }

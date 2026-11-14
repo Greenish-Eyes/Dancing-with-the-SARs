@@ -7,6 +7,11 @@ const sites = {
 		eyebrow: "LIVE STUDY / WETLAND DYNAMICS",
 		story: "Following seasonal inundation through the forest canopy.",
 		fieldNote: "Seasonal river levels may shape wetland extent. Compare calibrated backscatter before treating a visual difference as change.",
+		radarContext: {
+			summary: "The long L-band wavelength can interact with woody trunks beneath canopy; flooded forest may produce a trunk–water double-bounce. Seasonal inundation is a hypothesis to test, not a flood measurement from this browse image.",
+			HHHH: "HH co-polarization can emphasize trunk–water geometry, but vegetation structure and viewing geometry also affect the return.",
+			HVHV: "HV cross-polarization is more sensitive to depolarizing canopy-volume scattering; compare it with HH and calibrated data when testing for inundation.",
+		},
 		center: [-3.1, -60.0],
 		zoom: 7,
 		bounds: [-61, -4, -59, -2],
@@ -19,6 +24,11 @@ const sites = {
 		eyebrow: "LIVE STUDY / COASTAL WETLANDS",
 		story: "Following the shifting edge between tidal marsh and open water.",
 		fieldNote: "Wetland boundaries respond to tides, storms, and sediment supply. Use repeat calibrated observations to investigate possible change.",
+		radarContext: {
+			summary: "Marsh stems, open water, soil moisture, and tides all shape L-band returns. River discharge, storms, subsidence, levees, and wetland restoration are possible drivers to investigate with repeat observations.",
+			HHHH: "HH co-polarization can emphasize water–stem or building–ground double-bounce; that pattern does not uniquely identify marsh loss or flooding.",
+			HVHV: "HV cross-polarization is more sensitive to depolarizing vegetation-volume scattering; a difference may reflect marsh structure or moisture, not necessarily lost wetland.",
+		},
 		center: [29.5, -90.0],
 		zoom: 7,
 		bounds: [-91, 28, -89, 31],
@@ -31,6 +41,11 @@ const sites = {
 		eyebrow: "LIVE STUDY / GLACIER DYNAMICS",
 		story: "Exploring radar observations over ice, meltwater, and volcanic terrain.",
 		fieldNote: "Radar returns over ice vary with melt, roughness, and snow conditions. A browse image alone cannot identify glacier motion.",
+		radarContext: {
+			summary: "Snow and ice returns vary with surface roughness, liquid water, and internal structure. Seasonal melt or changing ice-surface texture are hypotheses; compare repeat passes from similar seasons.",
+			HHHH: "HH co-polarization emphasizes surface and geometry contributions; wet snow can strongly alter the return.",
+			HVHV: "HV cross-polarization is more sensitive to depolarizing volume and rough-surface scattering; it is not a direct measure of glacier motion.",
+		},
 		center: [64.0, -19.0],
 		zoom: 7,
 		bounds: [-20, 63, -18, 65],
@@ -43,6 +58,11 @@ const sites = {
 		eyebrow: "LIVE STUDY / URBAN CHANGE",
 		story: "Exploring radar observations across a growing coastal megacity.",
 		fieldNote: "Urban radar returns depend on buildings, surface moisture, and viewing geometry. Measuring subsidence requires calibrated interferometric data.",
+		radarContext: {
+			summary: "Dense buildings, wet ground, and coastal water create different scattering paths. Groundwater extraction, land reclamation, drainage, and coastal flooding are possible drivers; subsidence requires repeat-pass InSAR, not browse-image contrast.",
+			HHHH: "HH co-polarization can emphasize building–ground double-bounce; the return also depends on building orientation and look geometry.",
+			HVHV: "HV cross-polarization is more sensitive to depolarizing and volume scattering from urban structure; it does not measure subsidence by itself.",
+		},
 		center: [-6.2, 106.8],
 		zoom: 8,
 		bounds: [106, -7, 108, -5],
@@ -97,6 +117,8 @@ const ui = {
 	storyLast: document.getElementById("story-last"),
 	storyCopy: document.getElementById("story-copy"),
 	fieldNoteCopy: document.getElementById("field-note-copy"),
+	radarContextCopy: document.getElementById("radar-context-copy"),
+	radarContextPass: document.getElementById("radar-context-pass"),
 	panelSceneCount: document.getElementById("panel-scene-count"),
 	latestPassDate: document.getElementById("latest-pass-date"),
 	latestPassHint: document.getElementById("latest-pass-hint"),
@@ -327,17 +349,43 @@ function comparePair(granule) {
 }
 
 function describePlace() {
+	const site = siteAtMapCenter();
+	if (site) return { place: site.name, theme: site.theme };
 	const center = map.getCenter();
-	for (const site of Object.values(sites)) {
-		const [west, south, east, north] = site.bounds;
-		if (center.lng >= west && center.lng <= east && center.lat >= south && center.lat <= north) {
-			return { place: site.name, theme: site.theme };
-		}
-	}
 	return {
 		place: `the area near ${formatCoordinate(center.lat, "N", "S")}, ${formatCoordinate(center.lng, "E", "W")}`,
 		theme: undefined,
 	};
+}
+
+function siteAtMapCenter() {
+	const center = map.getCenter();
+	for (const site of Object.values(sites)) {
+		const [west, south, east, north] = site.bounds;
+		if (center.lng >= west && center.lng <= east && center.lat >= south && center.lat <= north) return site;
+	}
+	return null;
+}
+
+function renderRadarContext(granule) {
+	const site = siteAtMapCenter();
+	const context = site?.radarContext;
+	const polarization = selectedChannel.endsWith("HHHH")
+		? "HHHH"
+		: selectedChannel.endsWith("HVHV")
+			? "HVHV"
+			: null;
+	ui.radarContextCopy.textContent = context
+		? `${context.summary}${polarization ? ` ${context[polarization]}` : ""}`
+		: "L-band returns vary with moisture, roughness, surface structure, and viewing geometry. Compare repeat passes and polarization-aware calibrated data; a browse image alone does not establish change.";
+	if (!granule) {
+		ui.radarContextPass.textContent = "Select a pass to anchor this hypothesis in time.";
+		return;
+	}
+	const layer = granule.browseChannels.find(
+		(item) => `${item.frequency}-${item.polarization}` === selectedChannel,
+	);
+	ui.radarContextPass.textContent = `${formatDate(granule.timeStart)} · ${layer ? `FREQUENCY ${layer.frequency} · ${layer.polarization}` : "GEOGRAPHIC QUICKLOOK"}`;
 }
 
 function hideExplanation() {
@@ -425,6 +473,7 @@ async function explainSelectedChange() {
 function renderSelection() {
 	const granule = getSelectedGranule();
 	if (!granule) {
+		renderRadarContext(null);
 		ui.selectedIndex.textContent = "—";
 		ui.selectedDateCopy.textContent = "Choose an observation";
 		ui.latestPassDate.textContent = "No pass in view";
@@ -439,6 +488,7 @@ function renderSelection() {
 		return;
 	}
 
+	renderRadarContext(granule);
 	const selectedNumber = granules.indexOf(granule) + 1;
 	ui.selectedIndex.textContent = `${String(selectedNumber).padStart(2, "0")} / ${String(granules.length).padStart(2, "0")}`;
 	ui.selectedDateCopy.textContent = formatDate(granule.timeStart);
