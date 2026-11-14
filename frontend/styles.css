@@ -34,8 +34,12 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .brand-copy { display: grid; gap: 4px; }
 .brand-copy strong { font: 600 13px var(--display); letter-spacing: 3px; }
 .brand-copy small { color: #91998b; font: 9px var(--mono); letter-spacing: 3.2px; }
-.topbar-right { display: flex; align-items: center; gap: 25px; }
+.topbar-right { display: flex; align-items: center; gap: 18px; }
 .catalog-status { display: flex; align-items: center; gap: 8px; color: #c5ccbb; font: 9px var(--mono); letter-spacing: 1px; }
+.map-context-control { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid rgb(221 231 204 / 20%); background: rgb(255 255 255 / 3%); }
+.map-context-control > span { color: #9da795; font: 7px var(--mono); letter-spacing: 1px; white-space: nowrap; }
+.map-context-control select { max-width: 145px; appearance: none; border: 0; background: transparent; color: #e4e8db; font: 8px var(--mono); cursor: pointer; }
+.map-context-control option { background: #172019; color: var(--text); }
 .status-dot, .live-pulse { position: relative; display: inline-block; flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 12px rgb(215 255 81 / 55%); }
 .live-pulse::after { position: absolute; inset: -4px; border: 1px solid rgb(215 255 81 / 40%); border-radius: 50%; content: ""; animation: pulse 2s ease-out infinite; }
 @keyframes pulse { 0% { transform: scale(.55); opacity: .8; } 100% { transform: scale(1.7); opacity: 0; } }
@@ -257,6 +261,10 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 	.brand-copy small { font-size: 7px; letter-spacing: 2px; }
 	.topbar-right { gap: 9px; }
 	.catalog-status { font-size: 7px; letter-spacing: .6px; }
+	.topbar-right { gap: 7px; }
+	.map-context-control { padding: 6px; }
+	.map-context-control > span { display: none; }
+	.map-context-control select { max-width: 96px; font-size: 7px; }
 	.mission-link { padding: 8px; font-size: 7px; }
 	.explorer { height: auto; min-height: 0; overflow: visible; background: var(--ink); }
 	.map-column { position: relative; height: auto; }
@@ -307,6 +315,8 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 	.topbar { padding: 0 10px; }
 	.topbar-right { gap: 6px; }
 	.catalog-status { gap: 5px; font-size: 6px; }
+	.map-context-control { padding: 5px; }
+	.map-context-control select { max-width: 74px; font-size: 6px; }
 	.mission-link { gap: 4px; padding: 7px 6px; font-size: 6px; }
 	.map-toolbar { gap: 6px; }
 	.location-icon { display: none; }

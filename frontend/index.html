@@ -37,6 +37,14 @@
 				</a>
 				<div class="topbar-right">
 					<span class="catalog-status"><span class="status-dot"></span>NASA CMR LIVE</span>
+					<label class="map-context-control" for="map-context-layer">
+						<span>MAP CONTEXT</span>
+						<select id="map-context-layer" aria-label="Map context layer">
+							<option value="satellite">Satellite imagery</option>
+							<option value="topographic">Topography + roads</option>
+							<option value="hillshade">Elevation hillshade</option>
+						</select>
+					</label>
 					<a class="mission-link" href="https://nisar.jpl.nasa.gov/" target="_blank" rel="noreferrer">
 						NISAR MISSION <span aria-hidden="true">↗</span>
 					</a>
@@ -101,7 +109,7 @@
 								<span class="map-coordinates" id="map-coordinates">03° 05′ S &nbsp; 060° 01′ W</span>
 							</div>
 							<div class="map-zoom-note">NISAR SCENE FOOTPRINTS <span>·</span> L2 GCOV</div>
-							<div class="map-attribution">Imagery © Esri, Maxar, Earthstar Geographics</div>
+							<div class="map-attribution" id="map-attribution">Imagery © Esri, Maxar, Earthstar Geographics</div>
 							<div class="map-message" id="map-message" role="status" aria-live="polite">
 								<span class="spinner"></span><span>Listening for a NISAR pass…</span>
 							</div>

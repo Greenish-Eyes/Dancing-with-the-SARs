@@ -73,10 +73,31 @@ const map = L.map("map", { zoomControl: true, attributionControl: false }).setVi
 	sites.amazon.center,
 	sites.amazon.zoom,
 );
-L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-	attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
-	maxZoom: 19,
-}).addTo(map);
+const mapLayers = {
+	satellite: {
+		layer: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+			attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+			maxZoom: 19,
+		}),
+		attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+	},
+	topographic: {
+		layer: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+			attribution: "Topographic map © Esri, HERE, Garmin, Intermap, NGA, USGS, EPA",
+			maxZoom: 19,
+		}),
+		attribution: "Topographic map © Esri, HERE, Garmin, Intermap, NGA, USGS, EPA",
+	},
+	hillshade: {
+		layer: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}", {
+			attribution: "Elevation hillshade © Esri",
+			maxZoom: 16,
+		}),
+		attribution: "Elevation hillshade © Esri",
+	},
+};
+let activeMapLayer = mapLayers.satellite.layer;
+activeMapLayer.addTo(map);
 
 const footprintLayer = L.featureGroup().addTo(map);
 const siteMarker = L.circleMarker(sites.amazon.center, {
@@ -90,6 +111,8 @@ const siteMarker = L.circleMarker(sites.amazon.center, {
 const ui = {
 	site: document.getElementById("site-select"),
 	dateWindow: document.getElementById("date-window"),
+	mapLayer: document.getElementById("map-context-layer"),
+	mapAttribution: document.getElementById("map-attribution"),
 	message: document.getElementById("map-message"),
 	sceneStatus: document.getElementById("scene-status"),
 	sceneCount: document.getElementById("scene-count"),
@@ -758,6 +781,13 @@ document.querySelectorAll(".place-button").forEach((button) => {
 ui.site.addEventListener("change", () => chooseSite(ui.site.value));
 ui.dateWindow.addEventListener("change", searchArea);
 document.getElementById("search-area").addEventListener("click", searchArea);
+ui.mapLayer.addEventListener("change", () => {
+	const selectedLayer = mapLayers[ui.mapLayer.value];
+	if (!selectedLayer) return;
+	map.removeLayer(activeMapLayer);
+	activeMapLayer = selectedLayer.layer.addTo(map);
+	ui.mapAttribution.textContent = selectedLayer.attribution;
+});
 ui.channel.addEventListener("change", () => {
 	selectedChannel = ui.channel.value;
 	compareMode = false;
