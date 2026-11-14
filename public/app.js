@@ -73,6 +73,8 @@ const ui = {
 	download: document.getElementById("download-link"),
 	explain: document.getElementById("explain-button"),
 	explainPanel: document.getElementById("explain-panel"),
+	feedList: document.getElementById("feed-list"),
+	feedStatus: document.getElementById("feed-status"),
 };
 
 let granules = [];
@@ -81,6 +83,7 @@ let selectedChannel = "quicklook";
 let compareMode = false;
 let requestNumber = 0;
 let explainNumber = 0;
+let pendingSelectId = null;
 let explainKey = null;
 const polygonById = new Map();
 
@@ -459,13 +462,14 @@ async function searchArea() {
 		if (!response.ok) throw new Error(result.error || `Catalog request failed (${response.status}).`);
 		if (thisRequest !== requestNumber) return;
 		granules = result.granules;
-		selectedId = granules[0]?.id ?? null;
+		selectedId = granules.some((item) => item.id === pendingSelectId) ? pendingSelectId : (granules[0]?.id ?? null);
+		pendingSelectId = null;
 		selectedChannel = "quicklook";
 		compareMode = false;
 		hideExplanation();
 		renderResults();
 		setMessage("No NISAR scenes found in this map view.", "hidden");
-		ui.sceneStatus.innerHTML = `<span class="status-dot"></span>${granules.length} SCENE${granules.length === 1 ? "" : "S"} · ${response.headers.get("X-Cache") === "HIT" ? "CACHED" : "NASA CMR"}`;
+		ui.sceneStatus.innerHTML = `<span class="status-dot"></span>${granules.length} SCENE${granules.length === 1 ? "" : "S"} · ${({ HIT: "CACHED", D1: "STORED COPY" })[response.headers.get("X-Cache")] ?? "NASA CMR"}`;
 	} catch (error) {
 		if (thisRequest !== requestNumber) return;
 		granules = [];
@@ -474,6 +478,68 @@ async function searchArea() {
 		const detail = error instanceof Error ? error.message : "The catalog request failed.";
 		setMessage(detail, "error");
 		ui.sceneStatus.innerHTML = '<span class="status-dot" style="background:#e58b58"></span>CATALOG UNAVAILABLE';
+	}
+}
+
+function timeAgo(ms) {
+	const minutes = Math.max(0, Math.round((Date.now() - ms) / 60000));
+	if (minutes < 1) return "JUST NOW";
+	if (minutes < 60) return `${minutes} MIN AGO`;
+	const hours = Math.round(minutes / 60);
+	if (hours < 48) return `${hours} H AGO`;
+	return `${Math.round(hours / 24)} D AGO`;
+}
+
+function renderFeed(passes) {
+	ui.feedList.replaceChildren();
+	if (passes.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "timeline-empty";
+		empty.textContent = "No passes stored yet. The hourly check will fill this in.";
+		ui.feedList.append(empty);
+		return;
+	}
+	for (const pass of passes) {
+		const site = sites[pass.site];
+		if (!site) continue;
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "feed-row";
+		button.setAttribute("aria-label", `Open ${site.name} pass from ${formatDate(pass.timeStart)}`);
+		const place = document.createElement("span");
+		place.className = "feed-place";
+		place.textContent = site.name;
+		const date = document.createElement("span");
+		date.className = "feed-date";
+		date.textContent = formatDate(pass.timeStart, { month: "short", day: "numeric" });
+		const orbit = document.createElement("span");
+		orbit.className = "scene-orbit";
+		orbit.textContent = pass.title.replace(/^NISAR_L2_PR_GCOV_/, "Orbit ");
+		button.append(place, date, orbit);
+		if (pass.isNew) {
+			const badge = document.createElement("span");
+			badge.className = "feed-new";
+			badge.textContent = "NEW";
+			button.append(badge);
+		}
+		button.addEventListener("click", () => {
+			pendingSelectId = pass.id;
+			chooseSite(pass.site);
+		});
+		ui.feedList.append(button);
+	}
+}
+
+async function loadFeed() {
+	try {
+		const response = await fetch("/api/nisar/feed?limit=8");
+		const result = await response.json();
+		if (!response.ok) throw new Error(result.error || "feed unavailable");
+		renderFeed(result.passes);
+		ui.feedStatus.textContent = result.lastChecked ? `CHECKED ${timeAgo(result.lastChecked)}` : "NOT CHECKED YET";
+	} catch {
+		ui.feedList.replaceChildren();
+		ui.feedStatus.textContent = "FEED UNAVAILABLE";
 	}
 }
 
@@ -519,3 +585,4 @@ map.on("moveend", () => {
 
 updateMapCenter();
 searchArea();
+loadFeed();
