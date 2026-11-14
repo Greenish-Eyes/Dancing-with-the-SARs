@@ -1,6 +1,7 @@
 import unittest
 
 from browse import parse_browse_url
+from geocode import normalize_place_query, parse_nominatim_results
 from nisar import _date_range, bbox_of, parse_bounds, parse_cmr_entry, parse_footprint, snap_bounds
 from runtime import from_js
 
@@ -67,6 +68,46 @@ class BrowseUrlTests(unittest.TestCase):
         rejected = "https://example.com/NISAR/file_LATLON_thumbnail.png"
         self.assertEqual(parse_browse_url(allowed), allowed)
         self.assertIsNone(parse_browse_url(rejected))
+
+
+class PlaceSearchTests(unittest.TestCase):
+    def test_normalize_place_query_collapses_whitespace_and_rejects_invalid_lengths(self):
+        self.assertEqual(normalize_place_query("  Ouachita\tMountains  "), "Ouachita Mountains")
+        self.assertIsNone(normalize_place_query("x"))
+        self.assertIsNone(normalize_place_query("x" * 121))
+
+    def test_parse_nominatim_results_returns_valid_center_and_bounds(self):
+        places = parse_nominatim_results(
+            [
+                {
+                    "name": "Ouachita Mountains",
+                    "display_name": "Ouachita Mountains, Arkansas, United States",
+                    "lat": "34.6",
+                    "lon": "-93.2",
+                    "boundingbox": ["33.0", "36.0", "-96.0", "-90.0"],
+                    "address": {"state": "Arkansas", "country": "United States"},
+                },
+                {"lat": "not-a-coordinate"},
+            ]
+        )
+        self.assertEqual(
+            places,
+            [
+                {
+                    "name": "Ouachita Mountains",
+                    "region": "Arkansas",
+                    "displayName": "Ouachita Mountains, Arkansas, United States",
+                    "center": [34.6, -93.2],
+                    "bounds": [-96.0, 33.0, -90.0, 36.0],
+                }
+            ],
+        )
+
+    def test_parse_nominatim_results_rejects_invalid_result_shapes(self):
+        with self.assertRaises(ValueError):
+            parse_nominatim_results({"lat": "34"})
+        with self.assertRaises(ValueError):
+            parse_nominatim_results([{"lat": "95", "lon": "0", "display_name": "Invalid", "boundingbox": ["0", "1", "0", "1"]}])
 
 
 class RuntimeConversionTests(unittest.TestCase):

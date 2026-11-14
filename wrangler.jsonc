@@ -11,6 +11,9 @@
 	"observability": {
 		"enabled": true
 	},
+	"vars": {
+		"GEOCODER_BASE_URL": "https://nominatim.openstreetmap.org"
+	},
 	"upload_source_maps": true,
 	"ai": {
 		"binding": "AI"

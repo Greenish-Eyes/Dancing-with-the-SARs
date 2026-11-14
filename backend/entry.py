@@ -4,6 +4,7 @@ from workers import Response, WorkerEntrypoint
 
 from browse import get_browse_image
 from explain import explain_change
+from geocode import geocode_places
 from nisar import ingest_all_sites, list_nisar_granules, pass_feed
 
 
@@ -12,6 +13,8 @@ class Default(WorkerEntrypoint):
         path = urlparse(str(request.url)).path
         if path == "/api/nisar/granules" and request.method == "GET":
             return await list_nisar_granules(request, self.env)
+        if path == "/api/nisar/geocode" and request.method == "GET":
+            return await geocode_places(request, self.env)
         if path == "/api/nisar/feed" and request.method == "GET":
             return await pass_feed(request, self.env)
         if path == "/api/nisar/browse" and request.method == "GET":

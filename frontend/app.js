@@ -12,6 +12,10 @@ const sites = {
 			HHHH: "HH co-polarization can emphasize trunk–water geometry, but vegetation structure and viewing geometry also affect the return.",
 			HVHV: "HV cross-polarization is more sensitive to depolarizing canopy-volume scattering; compare it with HH and calibrated data when testing for inundation.",
 		},
+		hypotheses: [
+			"Seasonal river stage and rainfall may change inundation beneath forest canopy; test this against water levels and repeat calibrated HH/HV observations.",
+			"Vegetation structure and acquisition geometry can also change the return, so a browse-image difference alone is not evidence of flooding.",
+		],
 		center: [-3.1, -60.0],
 		zoom: 7,
 		bounds: [-61, -4, -59, -2],
@@ -29,6 +33,10 @@ const sites = {
 			HHHH: "HH co-polarization can emphasize water–stem or building–ground double-bounce; that pattern does not uniquely identify marsh loss or flooding.",
 			HVHV: "HV cross-polarization is more sensitive to depolarizing vegetation-volume scattering; a difference may reflect marsh structure or moisture, not necessarily lost wetland.",
 		},
+		hypotheses: [
+			"Tides, storms, river discharge, and subsidence may alter the marsh–water boundary.",
+			"Levees, navigation channels, wetland restoration, and sediment supply are human or managed drivers to investigate with tide, elevation, and land-cover records.",
+		],
 		center: [29.5, -90.0],
 		zoom: 7,
 		bounds: [-91, 28, -89, 31],
@@ -46,6 +54,10 @@ const sites = {
 			HHHH: "HH co-polarization emphasizes surface and geometry contributions; wet snow can strongly alter the return.",
 			HVHV: "HV cross-polarization is more sensitive to depolarizing volume and rough-surface scattering; it is not a direct measure of glacier motion.",
 		},
+		hypotheses: [
+			"Seasonal snowmelt, snow wetness, accumulation, and changing ice-surface roughness may alter radar returns.",
+			"Use same-season repeats and independent glacier, weather, and optical observations to distinguish surface-condition changes from longer-term ice change.",
+		],
 		center: [64.0, -19.0],
 		zoom: 7,
 		bounds: [-20, 63, -18, 65],
@@ -63,10 +75,33 @@ const sites = {
 			HHHH: "HH co-polarization can emphasize building–ground double-bounce; the return also depends on building orientation and look geometry.",
 			HVHV: "HV cross-polarization is more sensitive to depolarizing and volume scattering from urban structure; it does not measure subsidence by itself.",
 		},
+		hypotheses: [
+			"Groundwater extraction, land reclamation, drainage, and urban growth may influence subsidence risk and surface-water patterns.",
+			"Coastal water levels and heavy rainfall can also change inundation; measuring subsidence requires repeat-pass InSAR and ground observations.",
+		],
 		center: [-6.2, 106.8],
 		zoom: 8,
 		bounds: [106, -7, 108, -5],
 	},
+};
+
+const mapAreaStory = {
+	name: "Selected map area",
+	theme: "surface change across a user-selected region",
+	region: "USER-DEFINED MAP EXTENT",
+	headline: ["A REGION", "IN", "MOTION"],
+	eyebrow: "LIVE STUDY / USER-DEFINED AREA",
+	story: "Explore NISAR observations across the current map extent.",
+	fieldNote: "Potential physical and human drivers depend on local land cover and conditions. Treat browse-image differences as leads to investigate, not measured change.",
+	radarContext: {
+		summary: "L-band radar returns respond to moisture, roughness, surface structure, and viewing geometry. Use repeat, calibrated observations and local context to test possible changes.",
+		HHHH: "HH co-polarization can emphasize surface geometry and double-bounce; it does not identify a unique cause of change.",
+		HVHV: "HV cross-polarization is more sensitive to depolarizing volume scattering; compare it with HH and independent land-cover data.",
+	},
+	hypotheses: [
+		"Possible drivers depend on local land cover, weather, water levels, and human activity; the geographic quicklooks alone cannot distinguish them.",
+		"Compare calibrated repeat-pass NISAR data with local elevation, land-cover, and event records before drawing conclusions.",
+	],
 };
 
 const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(
@@ -111,6 +146,11 @@ const siteMarker = L.circleMarker(sites.amazon.center, {
 const ui = {
 	site: document.getElementById("site-select"),
 	dateWindow: document.getElementById("date-window"),
+	placeSearchForm: document.getElementById("place-search-form"),
+	placeQuery: document.getElementById("place-query"),
+	placeSearchSubmit: document.getElementById("place-search-submit"),
+	placeSearchStatus: document.getElementById("place-search-status"),
+	placeSearchResults: document.getElementById("place-search-results"),
 	mapLayer: document.getElementById("map-context-layer"),
 	mapAttribution: document.getElementById("map-attribution"),
 	message: document.getElementById("map-message"),
@@ -143,6 +183,17 @@ const ui = {
 	fieldNoteCopy: document.getElementById("field-note-copy"),
 	radarContextCopy: document.getElementById("radar-context-copy"),
 	radarContextPass: document.getElementById("radar-context-pass"),
+	storyOpen: document.getElementById("story-open"),
+	storyDialog: document.getElementById("story-dialog"),
+	storyClose: document.getElementById("story-close"),
+	storyStepCount: document.getElementById("story-step-count"),
+	storyStepLabel: document.getElementById("story-step-label"),
+	storyStepTitle: document.getElementById("story-step-title"),
+	storyStepCopy: document.getElementById("story-step-copy"),
+	storyHypotheses: document.getElementById("story-hypotheses"),
+	storyMedia: document.getElementById("story-media"),
+	storyPrevious: document.getElementById("story-prev"),
+	storyNext: document.getElementById("story-next"),
 	panelSceneCount: document.getElementById("panel-scene-count"),
 	latestPassDate: document.getElementById("latest-pass-date"),
 	latestPassHint: document.getElementById("latest-pass-hint"),
@@ -159,6 +210,10 @@ let explainNumber = 0;
 let pendingSelectId = null;
 let explainKey = null;
 let timelineTimer = null;
+let storySteps = [];
+let storyStepIndex = 0;
+let customPlace = null;
+let lastPlaceSearchAt = 0;
 const polygonById = new Map();
 
 function formatDate(value, options = { month: "short", day: "numeric", year: "numeric" }) {
@@ -458,13 +513,24 @@ function comparePair(granule) {
 }
 
 function describePlace() {
-	const site = siteAtMapCenter();
-	if (site) return { place: site.name, theme: site.theme };
+	const site = activeStudyArea();
+	if (site !== mapAreaStory) return { place: site.name, theme: site.theme };
 	const center = map.getCenter();
 	return {
 		place: `the area near ${formatCoordinate(center.lat, "N", "S")}, ${formatCoordinate(center.lng, "E", "W")}`,
-		theme: undefined,
+		theme: mapAreaStory.theme,
 	};
+}
+
+function activeStudyArea() {
+	if (customPlace) {
+		const [west, south, east, north] = customPlace.bounds;
+		const center = map.getCenter();
+		if (center.lng >= west && center.lng <= east && center.lat >= south && center.lat <= north) {
+			return customPlace;
+		}
+	}
+	return siteAtMapCenter() ?? mapAreaStory;
 }
 
 function siteAtMapCenter() {
@@ -477,7 +543,7 @@ function siteAtMapCenter() {
 }
 
 function renderRadarContext(granule) {
-	const site = siteAtMapCenter();
+	const site = activeStudyArea();
 	const context = site?.radarContext;
 	const polarization = selectedChannel.endsWith("HHHH")
 		? "HHHH"
@@ -495,6 +561,98 @@ function renderRadarContext(granule) {
 		(item) => `${item.frequency}-${item.polarization}` === selectedChannel,
 	);
 	ui.radarContextPass.textContent = `${formatDate(granule.timeStart)} · ${layer ? `FREQUENCY ${layer.frequency} · ${layer.polarization}` : "GEOGRAPHIC QUICKLOOK"}`;
+}
+
+function representativeStoryScenes() {
+	const byDate = new Map();
+	for (const granule of [...granules].sort((left, right) => left.timeStart.localeCompare(right.timeStart))) {
+		const date = granule.timeStart.slice(0, 10);
+		if (!byDate.has(date)) byDate.set(date, granule);
+	}
+	const scenes = [...byDate.values()];
+	if (scenes.length <= 3) return scenes;
+	return [scenes[0], scenes[Math.floor((scenes.length - 1) / 2)], scenes[scenes.length - 1]];
+}
+
+function renderStoryStep() {
+	const step = storySteps[storyStepIndex];
+	ui.storyStepCount.textContent = `CHAPTER ${storyStepIndex + 1} / ${storySteps.length}`;
+	ui.storyStepLabel.textContent = step.label;
+	ui.storyStepTitle.textContent = step.title;
+	ui.storyStepCopy.textContent = step.copy;
+	ui.storyHypotheses.replaceChildren();
+	for (const hypothesis of step.hypotheses ?? []) {
+		const item = document.createElement("li");
+		item.textContent = hypothesis;
+		ui.storyHypotheses.append(item);
+	}
+	ui.storyHypotheses.hidden = !step.hypotheses?.length;
+	ui.storyMedia.replaceChildren();
+	if (step.scene) {
+		selectedId = step.scene.id;
+		compareMode = false;
+		renderResults();
+		if (step.scene.browseUrl) {
+			const image = document.createElement("img");
+			image.src = browseImageUrl(step.scene.browseUrl);
+			image.alt = `NISAR geographic radar quicklook from ${formatDate(step.scene.timeStart)}`;
+			image.loading = "lazy";
+			const caption = document.createElement("figcaption");
+			caption.textContent = `GEOGRAPHIC QUICKLOOK · ${formatDate(step.scene.timeStart)}`;
+			ui.storyMedia.append(image, caption);
+		} else {
+			ui.storyMedia.textContent = "No geographic quicklook is linked for this acquisition.";
+		}
+	} else {
+		ui.storyMedia.textContent = "The map shows the currently selected study area.";
+	}
+	ui.storyPrevious.disabled = storyStepIndex === 0;
+	ui.storyNext.textContent = storyStepIndex === storySteps.length - 1 ? "Finish tour" : "Next observation →";
+}
+
+async function openStoryMode() {
+	ui.storyOpen.disabled = true;
+	try {
+		let scenes = representativeStoryScenes();
+		if (scenes.length < 2 && ui.dateWindow.value !== "all") {
+			ui.dateWindow.value = "all";
+			await searchArea();
+			scenes = representativeStoryScenes();
+		}
+		const site = activeStudyArea();
+		if (scenes.length < 2) {
+			storySteps = [{
+				label: "CATALOG CHECK",
+				title: "A multi-date sequence is not available yet",
+				copy: "This area needs at least two distinct NISAR acquisition dates. The all-dates search returned fewer than two; try another site or check back as new passes are added.",
+			}];
+		} else {
+			storySteps = [
+				{
+					label: "FIELD GUIDE",
+					title: `${site.name}: a radar story`,
+					copy: `${site.story} This guided sequence uses up to three distinct acquisition dates in the current catalog results, then closes with physical-driver hypotheses to investigate.`,
+				},
+				...scenes.map((scene, index) => ({
+					label: `PASS ${index + 1} OF ${scenes.length}`,
+					title: formatDate(scene.timeStart),
+					copy: `${site.radarContext.summary} Inspect this pass as one point in a time series; the provisional quicklook is not a calibrated change measurement.`,
+					scene,
+				})),
+				{
+					label: "WHAT COULD DRIVE THE PATTERN?",
+					title: "Hypotheses to test",
+					copy: "These are plausible physical or human drivers for this study area, not conclusions from the browse images. Test them with calibrated NISAR products and independent local data.",
+					hypotheses: site.hypotheses,
+				},
+			];
+		}
+		storyStepIndex = 0;
+		ui.storyDialog.showModal();
+		renderStoryStep();
+	} finally {
+		ui.storyOpen.disabled = false;
+	}
 }
 
 function hideExplanation() {
@@ -629,10 +787,13 @@ function renderResults() {
 	renderSelection();
 }
 
-async function searchArea() {
+async function searchArea(boundsOverride) {
 	stopTimelinePlayback();
 	const thisRequest = ++requestNumber;
-	const [west, south, east, north] = currentBounds();
+	const studyArea = boundsOverride && customPlace ? customPlace : activeStudyArea();
+	const bounds = boundsOverride ?? (studyArea === customPlace ? customPlace.bounds : currentBounds());
+	const [west, south, east, north] = bounds;
+	updateStory(studyArea);
 	const query = new URLSearchParams({
 		bbox: [west, south, east, north].map((value) => value.toFixed(5)).join(","),
 	});
@@ -740,8 +901,13 @@ async function loadFeed() {
 }
 
 function chooseSite(siteId) {
+	if (siteId === "map") {
+		searchCurrentMapArea();
+		return;
+	}
 	const site = sites[siteId];
 	if (!site) return;
+	customPlace = null;
 	updateStory(site);
 	ui.site.value = siteId;
 	document.querySelectorAll(".place-button").forEach((button) => {
@@ -764,6 +930,120 @@ function updateStory(site) {
 	ui.fieldNoteCopy.textContent = site.fieldNote;
 }
 
+function searchCurrentMapArea() {
+	customPlace = null;
+	ui.site.value = "map";
+	document.querySelectorAll(".place-button").forEach((button) => button.classList.remove("selected"));
+	updateStory(activeStudyArea());
+	searchArea(currentBounds());
+}
+
+function makeNamedPlace(place) {
+	return {
+		...mapAreaStory,
+		...place,
+		theme: `surface change across ${place.name}`,
+		region: place.region.toUpperCase(),
+		headline: ["A PLACE", "IN", "MOTION"],
+		eyebrow: `CUSTOM STUDY / ${place.region.toUpperCase()}`,
+		story: `Explore NISAR coverage across ${place.name}.`,
+		fieldNote: "This place search sets a geographic extent, not a NISAR observation footprint. Potential change drivers need to be tested against calibrated repeat data and local context.",
+		radarContext: {
+			...mapAreaStory.radarContext,
+			summary: `Across ${place.name}, L-band radar returns respond to moisture, roughness, surface structure, and viewing geometry. Explore repeat observations as evidence to investigate, not as a standalone change measurement.`,
+		},
+		hypotheses: [
+			`Possible natural and human drivers around ${place.name} depend on local land cover, weather, water levels, and activity; browse images alone cannot distinguish them.`,
+			"Compare calibrated repeat-pass NISAR data with local elevation, land-cover, and event records before drawing conclusions.",
+		],
+	};
+}
+
+async function searchNamedPlaces(event) {
+	event.preventDefault();
+	if (ui.placeSearchSubmit.disabled) return;
+	const query = ui.placeQuery.value.trim().replace(/\s+/g, " ");
+	if (query.length < 2 || query.length > 120) {
+		ui.placeSearchStatus.textContent = "Enter a place name between 2 and 120 characters.";
+		ui.placeSearchResults.hidden = true;
+		return;
+	}
+	const waitMs = 1000 - (Date.now() - lastPlaceSearchAt);
+	if (waitMs > 0) {
+		ui.placeSearchStatus.textContent = "Please wait a second before searching again.";
+		return;
+	}
+
+	lastPlaceSearchAt = Date.now();
+	ui.placeSearchSubmit.disabled = true;
+	ui.placeSearchStatus.textContent = "Searching OpenStreetMap…";
+	ui.placeSearchResults.replaceChildren();
+	ui.placeSearchResults.hidden = true;
+	try {
+		const params = new URLSearchParams({ q: query });
+		const response = await fetch(`/api/nisar/geocode?${params}`);
+		let result;
+		try {
+			result = await response.json();
+		} catch {
+			throw new Error("The place search response could not be read.");
+		}
+		if (!response.ok) throw new Error(result.error || `Place search failed (${response.status}).`);
+		if (!Array.isArray(result.places)) throw new Error("The place search returned unexpected results.");
+		if (result.places.length === 0) {
+			ui.placeSearchStatus.textContent = "No matching places found. Try a more specific name.";
+			return;
+		}
+		for (const place of result.places) {
+			if (!place || typeof place.name !== "string" || typeof place.displayName !== "string") continue;
+			const button = document.createElement("button");
+			button.type = "button";
+			button.className = "place-result";
+			button.setAttribute("aria-label", `Use ${place.displayName}`);
+			const name = document.createElement("strong");
+			name.textContent = place.name;
+			const detail = document.createElement("span");
+			detail.textContent = place.displayName;
+			button.append(name, detail);
+			button.addEventListener("click", () => selectNamedPlace(place));
+			ui.placeSearchResults.append(button);
+		}
+		if (!ui.placeSearchResults.childElementCount) {
+			ui.placeSearchStatus.textContent = "The place search returned no usable locations.";
+			return;
+		}
+		ui.placeSearchResults.hidden = false;
+		ui.placeSearchStatus.textContent = `${ui.placeSearchResults.childElementCount} result${ui.placeSearchResults.childElementCount === 1 ? "" : "s"} found. Choose the correct location.`;
+	} catch (error) {
+		ui.placeSearchStatus.textContent = error instanceof Error ? error.message : "The place search failed.";
+	} finally {
+		ui.placeSearchSubmit.disabled = false;
+	}
+}
+
+function selectNamedPlace(place) {
+	if (
+		!Array.isArray(place.center)
+		|| place.center.length !== 2
+		|| !Array.isArray(place.bounds)
+		|| place.bounds.length !== 4
+		|| ![...place.center, ...place.bounds].every(Number.isFinite)
+	) {
+		ui.placeSearchStatus.textContent = "This result does not have a usable map location.";
+		return;
+	}
+	customPlace = makeNamedPlace(place);
+	ui.site.value = "custom";
+	document.querySelectorAll(".place-button").forEach((button) => button.classList.remove("selected"));
+	siteMarker.setLatLng(place.center);
+	updateStory(customPlace);
+	ui.placeSearchResults.hidden = true;
+	ui.placeSearchStatus.textContent = `Selected ${place.displayName}. Searching its NISAR coverage…`;
+	const [west, south, east, north] = place.bounds;
+	map.fitBounds([[south, west], [north, east]], { padding: [55, 55], maxZoom: 9 });
+	searchArea(place.bounds);
+}
+
 function stopTimelinePlayback() {
 	if (timelineTimer !== null) {
 		window.clearInterval(timelineTimer);
@@ -780,7 +1060,23 @@ document.querySelectorAll(".place-button").forEach((button) => {
 });
 ui.site.addEventListener("change", () => chooseSite(ui.site.value));
 ui.dateWindow.addEventListener("change", searchArea);
-document.getElementById("search-area").addEventListener("click", searchArea);
+document.getElementById("search-area").addEventListener("click", searchCurrentMapArea);
+ui.placeSearchForm.addEventListener("submit", searchNamedPlaces);
+ui.storyOpen.addEventListener("click", openStoryMode);
+ui.storyClose.addEventListener("click", () => ui.storyDialog.close());
+ui.storyPrevious.addEventListener("click", () => {
+	if (storyStepIndex === 0) return;
+	storyStepIndex--;
+	renderStoryStep();
+});
+ui.storyNext.addEventListener("click", () => {
+	if (storyStepIndex === storySteps.length - 1) {
+		ui.storyDialog.close();
+		return;
+	}
+	storyStepIndex++;
+	renderStoryStep();
+});
 ui.mapLayer.addEventListener("change", () => {
 	const selectedLayer = mapLayers[ui.mapLayer.value];
 	if (!selectedLayer) return;
@@ -818,8 +1114,8 @@ ui.timelinePlay.addEventListener("click", () => {
 });
 map.on("moveend", updateMapCenter);
 map.on("moveend", () => {
-	const site = sites[ui.site.value];
-	if (!site || !map.getBounds().contains(site.center)) {
+	const center = activeStudyArea().center;
+	if (!center || !map.getBounds().contains(center)) {
 		siteMarker.setStyle({ opacity: 0.35, fillOpacity: 0.3 });
 	} else {
 		siteMarker.setStyle({ opacity: 1, fillOpacity: 0.95 });

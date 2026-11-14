@@ -4,6 +4,8 @@ Surface Signals is an interactive map for exploring real NISAR scene coverage at
 
 The map uses Esri World Imagery, with optional topographic/road and elevation-hillshade context layers. Drag or zoom to an area and choose **Search this area** to look up its NISAR passes. Choose a study site or a date window from 90 days through five years, or search all dates, to refresh the catalog results. Up to the 100 most recent scenes are shown per map extent. Select a footprint, timeline point, or scene to inspect the available browse images. When two or more passes are available, **Compare passes** opens a swipe comparison between their quicklooks; the play control animates chronologically through the timeline. Available polarimetric browse channels are called out for each selected pass. Site-specific radar context is presented as a hypothesis, not a measured change.
 
+Enter and submit a city or region name to search OpenStreetMap; choose the matching result to set the map extent and load its NISAR passes. Searches are submit-only (no autocomplete), and the place name is sent to the configured geocoder. Results are cached in KV for seven days, and a D1-backed limiter allows at most one uncached provider request per second across the application. The map displays OpenStreetMap attribution and links to the Nominatim usage policy.
+
 ## Project layout
 
 - `frontend/` contains the browser application.
@@ -18,7 +20,7 @@ npx wrangler d1 migrations apply fieldnotes-db --local
 uv run pywrangler dev --local
 ```
 
-`--local` keeps development on local bindings and avoids the workers.dev subdomain required for remote preview mode. Alternatively, install dependencies with `python -m pip install -r backend/requirements.txt`, apply the local D1 migration, then run `pywrangler dev --local` from the activated environment.
+`--local` keeps development on local bindings and avoids the workers.dev subdomain required for remote preview mode. Alternatively, install dependencies with `python -m pip install -r backend/requirements.txt`, apply the local D1 migration, then run `pywrangler dev --local` from the activated environment. Apply all D1 migrations to the production database before deploying. The Nominatim-compatible endpoint is set by the non-secret `GEOCODER_BASE_URL` Wrangler variable and can be changed without modifying application code.
 
 Open the local URL printed by Wrangler. NASA CMR and the map and browse-image providers must be reachable for live data and imagery. Local D1 and R2 data are separate from the remote production resources. Run Python unit tests with `uv run --directory backend python -m unittest discover -s tests`.
 
@@ -45,6 +47,7 @@ The notebook's `earthaccess.login()` is only needed for authenticated NASA data 
 ## API
 
 - `GET /api/nisar/granules?bbox=west,south,east,north&from=YYYY-MM-DD&to=YYYY-MM-DD` — search the GCOV collection; D1 provides a stored fallback if CMR is unavailable.
+- `GET /api/nisar/geocode?q=<place-name>` — search the configured Nominatim-compatible service and return up to five selectable locations.
 - `GET /api/nisar/browse?url=<encoded-ASF-or-NASA-PNG-URL>` — validate, proxy, and cache NISAR PNG browse images in R2.
 - `GET /api/nisar/feed?site=amazon&limit=8` — list recently cataloged passes from D1.
 - `POST /api/nisar/explain` — compare two browse images with Workers AI.
