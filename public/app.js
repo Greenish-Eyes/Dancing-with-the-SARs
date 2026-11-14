@@ -1,24 +1,28 @@
 const sites = {
 	amazon: {
 		name: "Amazon floodplain",
+		theme: "seasonal flooding and forest structure along a large river floodplain",
 		center: [-3.1, -60.0],
 		zoom: 7,
 		bounds: [-61, -4, -59, -2],
 	},
 	louisiana: {
 		name: "Mississippi Delta",
+		theme: "coastal wetlands, marsh loss, and river delta flooding",
 		center: [29.5, -90.0],
 		zoom: 7,
 		bounds: [-91, 28, -89, 31],
 	},
 	iceland: {
 		name: "South Iceland",
+		theme: "glaciers, snow and ice, and volcanic terrain",
 		center: [64.0, -19.0],
 		zoom: 7,
 		bounds: [-20, 63, -18, 65],
 	},
 	jakarta: {
 		name: "Jakarta basin",
+		theme: "dense urban area with land subsidence and coastal flooding",
 		center: [-6.2, 106.8],
 		zoom: 8,
 		bounds: [106, -7, 108, -5],
@@ -67,6 +71,8 @@ const ui = {
 	compare: document.getElementById("compare-button"),
 	compareCount: document.getElementById("compare-count"),
 	download: document.getElementById("download-link"),
+	explain: document.getElementById("explain-button"),
+	explainPanel: document.getElementById("explain-panel"),
 };
 
 let granules = [];
@@ -74,6 +80,8 @@ let selectedId = null;
 let selectedChannel = "quicklook";
 let compareMode = false;
 let requestNumber = 0;
+let explainNumber = 0;
+let explainKey = null;
 const polygonById = new Map();
 
 function formatDate(value, options = { month: "short", day: "numeric", year: "numeric" }) {
@@ -277,6 +285,109 @@ function renderChannelOptions(granule) {
 	ui.channel.value = selectedChannel;
 }
 
+function comparePair(granule) {
+	if (!granule) return null;
+	const previous = granules[granules.indexOf(granule) + 1];
+	if (!previous || !granule.browseUrl || !previous.browseUrl) return null;
+	return { before: previous, after: granule };
+}
+
+function describePlace() {
+	const center = map.getCenter();
+	for (const site of Object.values(sites)) {
+		const [west, south, east, north] = site.bounds;
+		if (center.lng >= west && center.lng <= east && center.lat >= south && center.lat <= north) {
+			return { place: site.name, theme: site.theme };
+		}
+	}
+	return {
+		place: `the area near ${formatCoordinate(center.lat, "N", "S")}, ${formatCoordinate(center.lng, "E", "W")}`,
+		theme: undefined,
+	};
+}
+
+function hideExplanation() {
+	explainNumber++;
+	explainKey = null;
+	ui.explainPanel.classList.add("hidden");
+	ui.explainPanel.replaceChildren();
+	ui.explain.classList.remove("busy");
+	ui.explain.textContent = "";
+	ui.explain.append(Object.assign(document.createElement("span"), { className: "explain-icon", textContent: "✦" }), " Explain this change");
+}
+
+function showExplanation(kicker, paragraphs, footnote, state = "ready") {
+	ui.explainPanel.replaceChildren();
+	ui.explainPanel.classList.remove("hidden", "error");
+	if (state === "error") ui.explainPanel.classList.add("error");
+	const head = document.createElement("div");
+	head.className = "explain-kicker";
+	head.textContent = kicker;
+	ui.explainPanel.append(head);
+	for (const text of paragraphs) {
+		const p = document.createElement("p");
+		p.textContent = text;
+		ui.explainPanel.append(p);
+	}
+	if (footnote) {
+		const foot = document.createElement("div");
+		foot.className = "explain-foot";
+		foot.textContent = footnote;
+		ui.explainPanel.append(foot);
+	}
+}
+
+async function explainSelectedChange() {
+	const pair = comparePair(getSelectedGranule());
+	if (!pair) return;
+	const key = `${pair.before.id}:${pair.after.id}`;
+	const thisRequest = ++explainNumber;
+	explainKey = key;
+	compareMode = true;
+	renderSelection();
+	ui.explain.disabled = true;
+	ui.explain.classList.add("busy");
+	showExplanation("AI READING", ["Comparing the two passes…"], null);
+	const { place, theme } = describePlace();
+	const stamp = (scene) => ({ id: scene.id, date: scene.timeStart.slice(0, 10), imageUrl: scene.browseUrl });
+	try {
+		const response = await fetch("/api/nisar/explain", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				place,
+				theme,
+				layer: "Geographic quicklook",
+				before: stamp(pair.before),
+				after: stamp(pair.after),
+			}),
+		});
+		let result;
+		try {
+			result = await response.json();
+		} catch {
+			throw new Error("The AI response could not be read.");
+		}
+		if (!response.ok) throw new Error(result.error || `AI request failed (${response.status}).`);
+		if (thisRequest !== explainNumber || explainKey !== key) return;
+		const paragraphs = result.text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+		showExplanation(
+			"AI READING · HYPOTHESES, NOT MEASUREMENTS",
+			paragraphs,
+			`${result.cached ? "CACHED · " : ""}WORKERS AI · LLAMA 4 SCOUT`,
+		);
+	} catch (error) {
+		if (thisRequest !== explainNumber) return;
+		const detail = error instanceof Error ? error.message : "The AI request failed.";
+		showExplanation("AI READING UNAVAILABLE", [detail], null, "error");
+	} finally {
+		if (thisRequest === explainNumber) {
+			ui.explain.classList.remove("busy");
+			renderSelection();
+		}
+	}
+}
+
 function renderSelection() {
 	const granule = getSelectedGranule();
 	if (!granule) {
@@ -284,6 +395,7 @@ function renderSelection() {
 		ui.selectedTitle.textContent = "No NISAR passes in this view";
 		ui.selectedMeta.textContent = "Try another area or a wider date range.";
 		ui.compare.disabled = true;
+		ui.explain.disabled = true;
 		ui.compareCount.textContent = "0 passes";
 		ui.download.classList.add("disabled");
 		ui.download.removeAttribute("href");
@@ -299,6 +411,9 @@ function renderSelection() {
 	ui.compare.disabled = granules.length < 2;
 	ui.compareCount.textContent = granules.length > 1 ? `${granules.length - 1} earlier` : "1 pass";
 	ui.compare.classList.toggle("comparison-active", compareMode);
+	const pair = comparePair(granule);
+	ui.explain.disabled = !pair || ui.explain.classList.contains("busy");
+	if (explainKey && (!pair || explainKey !== `${pair.before.id}:${pair.after.id}`)) hideExplanation();
 	if (granule.downloadUrl) {
 		ui.download.href = granule.downloadUrl;
 		ui.download.classList.remove("disabled");
@@ -347,9 +462,10 @@ async function searchArea() {
 		selectedId = granules[0]?.id ?? null;
 		selectedChannel = "quicklook";
 		compareMode = false;
+		hideExplanation();
 		renderResults();
 		setMessage("No NISAR scenes found in this map view.", "hidden");
-		ui.sceneStatus.innerHTML = `<span class="status-dot"></span>${granules.length} SCENE${granules.length === 1 ? "" : "S"} · NASA CMR`;
+		ui.sceneStatus.innerHTML = `<span class="status-dot"></span>${granules.length} SCENE${granules.length === 1 ? "" : "S"} · ${response.headers.get("X-Cache") === "HIT" ? "CACHED" : "NASA CMR"}`;
 	} catch (error) {
 		if (thisRequest !== requestNumber) return;
 		granules = [];
@@ -385,6 +501,7 @@ ui.channel.addEventListener("change", () => {
 	compareMode = false;
 	renderSelection();
 });
+ui.explain.addEventListener("click", explainSelectedChange);
 ui.compare.addEventListener("click", () => {
 	if (granules.length < 2) return;
 	compareMode = !compareMode;

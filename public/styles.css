@@ -185,6 +185,18 @@ h1 em { color: var(--lime); font-weight: 500; }
 .compare-button:disabled { color: #626b5b; cursor: not-allowed; }
 .compare-icon { margin-right: 5px; font-size: 15px; vertical-align: -1px; }
 .compare-count { color: #737b6d; font: 8px var(--mono); }
+.explain-button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: 11px; padding: 8px 10px; border: 1px solid #414a34; border-radius: 4px; background: #23291e; color: var(--lime); font-size: 10px; cursor: pointer; transition: .2s; }
+.explain-button:hover:not(:disabled) { border-color: var(--lime-dark); background: #2a3123; }
+.explain-button:disabled { border-color: var(--line); background: transparent; color: #626b5b; cursor: not-allowed; }
+.explain-button.busy { cursor: progress; }
+.explain-icon { font-size: 12px; }
+.explain-panel { margin-top: 10px; padding: 11px 11px 9px; border: 1px solid #393d2d; border-left: 2px solid var(--lime); border-radius: 3px; background: #1a1f17; }
+.explain-panel.hidden { display: none; }
+.explain-panel.error { border-left-color: var(--orange); }
+.explain-kicker, .explain-foot { font: 8px var(--mono); letter-spacing: .8px; color: var(--lime); }
+.explain-panel.error .explain-kicker { color: var(--orange); }
+.explain-panel p { margin: 8px 0 0; color: #c9cfbd; font-size: 11px; line-height: 1.6; }
+.explain-foot { margin-top: 9px; color: #6b7366; }
 .inspector-bottom { margin-top: auto; }
 .provisional-note { display: flex; gap: 9px; margin: 15px 0 13px; padding: 10px 9px; border: 1px solid #393d2d; border-radius: 3px; background: #1c2018; }
 .note-icon { display: grid; flex: 0 0 14px; place-items: center; width: 14px; height: 14px; border: 1px solid #8e9c60; border-radius: 50%; color: var(--lime); font: 9px var(--mono); }
@@ -220,7 +232,7 @@ h1 em { color: var(--lime); font-weight: 500; }
 	.main-content { width: calc(100% - 205px); padding-right: 18px; padding-left: 18px; }
 	.explorer { grid-template-columns: minmax(0, 1fr); }
 	.inspector { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; padding: 15px; }
-	.inspector-heading, .scene-status, .scene-list, .inspector-rule, .selected-label, .selected-title, .selected-meta, .preview-card, .polarization-label, .channel-wrap, .compare-row, .inspector-bottom { grid-column: 1 / -1; }
+	.inspector-heading, .scene-status, .scene-list, .inspector-rule, .selected-label, .selected-title, .selected-meta, .preview-card, .polarization-label, .channel-wrap, .compare-row, .explain-button, .explain-panel, .inspector-bottom { grid-column: 1 / -1; }
 	.inspector { grid-template-columns: minmax(0, 1fr); }
 	.inspector-bottom { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 14px; }
 	.provisional-note { margin: 12px 0 0; }

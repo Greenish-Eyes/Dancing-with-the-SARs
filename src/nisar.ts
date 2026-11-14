@@ -3,6 +3,7 @@ import { z } from "zod";
 
 const CMR_COLLECTION_ID = "C2854338529-ASF";
 const CMR_GRANULES_URL = "https://cmr.earthdata.nasa.gov/search/granules.json";
+const CATALOG_CACHE_TTL_SECONDS = 60 * 60;
 
 const querySchema = z.object({
 	bbox: z.string(),
@@ -58,6 +59,18 @@ function parseFootprint(polygons: string[][] | undefined): number[][] | null {
 	return points;
 }
 
+// Snap the box outward to 0.1 degrees so near-identical map views share one cache entry.
+function snapBounds(bounds: number[]): number[] {
+	const [west, south, east, north] = bounds as [number, number, number, number];
+	const snap = (value: number, round: (n: number) => number) => round(value * 10) / 10;
+	return [
+		Math.max(-180, snap(west, Math.floor)),
+		Math.max(-90, snap(south, Math.floor)),
+		Math.min(180, snap(east, Math.ceil)),
+		Math.min(90, snap(north, Math.ceil)),
+	];
+}
+
 export async function listNisarGranules(c: AppContext) {
 	const parsedQuery = querySchema.safeParse(c.req.query());
 	if (!parsedQuery.success) {
@@ -97,9 +110,20 @@ export async function listNisarGranules(c: AppContext) {
 		return c.json({ error: "Date ranges cannot exceed one year." }, 400);
 	}
 
+	const snapped = snapBounds(bounds);
+	const cacheKey = `granules:v1:${snapped.join(",")}:${from ?? "any"}:${to ?? "any"}`;
+	try {
+		const cached = await c.env.CACHE?.get(cacheKey, "json");
+		if (cached) {
+			return c.json(cached, 200, { "X-Cache": "HIT" });
+		}
+	} catch (error) {
+		console.error("Catalog cache read failed", error);
+	}
+
 	const params = new URLSearchParams({
 		collection_concept_id: CMR_COLLECTION_ID,
-		bounding_box: bounds.join(","),
+		bounding_box: snapped.join(","),
 		page_size: "20",
 		sort_key: "-start_date",
 	});
@@ -172,9 +196,17 @@ export async function listNisarGranules(c: AppContext) {
 		};
 	});
 
-	return c.json({
+	const payload = {
 		collection: "NISAR Provisional L2 GCOV v1",
 		collectionUrl: `https://search.earthdata.nasa.gov/search/granules?p=${CMR_COLLECTION_ID}`,
 		granules,
-	});
+	};
+	try {
+		await c.env.CACHE?.put(cacheKey, JSON.stringify(payload), {
+			expirationTtl: CATALOG_CACHE_TTL_SECONDS,
+		});
+	} catch (error) {
+		console.error("Catalog cache write failed", error);
+	}
+	return c.json(payload, 200, { "X-Cache": "MISS" });
 }
