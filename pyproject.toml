@@ -1,0 +1,12 @@
+[project]
+name = "surface-signals"
+version = "0.1.0"
+description = "Python Worker backend for the NISAR Surface Signals explorer"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "workers-py",
+    "workers-runtime-sdk",
+]

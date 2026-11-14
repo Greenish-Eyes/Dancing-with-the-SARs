@@ -1,17 +1,32 @@
-# Fieldnotes — NISAR Earth change explorer
+# Surface Signals — NISAR Earth change explorer
 
-Fieldnotes is an interactive map for exploring real NISAR scene coverage at four study areas and anywhere else on the map. It searches NASA's Common Metadata Repository (CMR) for the provisional Level 2 Geocoded Polarimetric Covariance (GCOV) collection, then displays scene footprints, acquisition dates, ASF browse images, and links to the source products.
+Surface Signals is an interactive map for exploring real NISAR scene coverage at four study areas and anywhere else on the map. It searches NASA's Common Metadata Repository (CMR) for the provisional Level 2 Geocoded Polarimetric Covariance (GCOV) collection, then displays scene footprints, acquisition dates, ASF browse images, and links to the source products.
 
-The map uses OpenStreetMap and CARTO tiles. Drag or zoom to an area and choose **Search this area** to look up its NISAR passes. Choose a study site or date window to refresh the catalog results. Select a footprint, timeline point, or scene to inspect the available browse images. When two or more passes are available, **Compare with previous pass** places their browse images side by side.
+The map uses Esri World Imagery. Drag or zoom to an area and choose **Search this area** to look up its NISAR passes. Choose a study site or date window to refresh the catalog results. Select a footprint, timeline point, or scene to inspect the available browse images. When two or more passes are available, **Compare passes** places their browse images side by side.
+
+## Project layout
+
+- `frontend/` contains the browser application.
+- `backend/` contains the Python Cloudflare Worker and its API/data-access modules.
+- `migrations/` contains the D1 schema.
 
 ## Run locally
 
 ```sh
-npm install
-npm run dev
+uv sync
+npx wrangler d1 migrations apply fieldnotes-db --local
+uv run pywrangler dev --local
 ```
 
-Open the local URL printed by Wrangler. NASA CMR and the map and browse-image providers must be reachable for live data and imagery.
+`--local` keeps development on local bindings and avoids the workers.dev subdomain required for remote preview mode. Alternatively, install dependencies with `python -m pip install -r backend/requirements.txt`, apply the local D1 migration, then run `pywrangler dev --local` from the activated environment.
+
+Open the local URL printed by Wrangler. NASA CMR and the map and browse-image providers must be reachable for live data and imagery. Local D1 and R2 data are separate from the remote production resources. Run Python unit tests with `uv run python -m unittest discover -s backend/tests`.
+
+Before deploying, create the configured R2 bucket if it does not exist:
+
+```sh
+npx wrangler r2 bucket create fieldnotes-images
+```
 
 ## Data notes
 
@@ -21,7 +36,14 @@ Open the local URL printed by Wrangler. NASA CMR and the map and browse-image pr
 - Polarization browse images are available when linked by a scene. Polarimetric channels vary by acquisition mode.
 - The default API date range is supplied by the UI and limited to one year; results are capped at the 20 most recent scenes.
 
-## API and docs
+## Python data workflow
 
-- `GET /api/nisar/granules?bbox=west,south,east,north&from=YYYY-MM-DD&to=YYYY-MM-DD` — search the GCOV collection.
-- `GET /docs` — OpenAPI documentation for the example task routes.
+The attached notebook demonstrates NASA Earthdata searches with `earthaccess`, temporal and bounding-box filters, granule downloads, and array-based visualization for MODIS HDF4 data. This app applies the search pattern to NISAR GCOV through NASA CMR and returns NISAR metadata and ASF browse images. It does not reuse the notebook's MODIS-specific HDF4 reader or temperature scaling for NISAR products.
+
+## API
+
+- `GET /api/nisar/granules?bbox=west,south,east,north&from=YYYY-MM-DD&to=YYYY-MM-DD` — search the GCOV collection; D1 provides a stored fallback if CMR is unavailable.
+- `GET /api/nisar/browse?url=<encoded-ASF-or-NASA-PNG-URL>` — validate, proxy, and cache NISAR PNG browse images in R2.
+- `GET /api/nisar/feed?site=amazon&limit=8` — list recently cataloged passes from D1.
+- `POST /api/nisar/explain` — compare two browse images with Workers AI.
+- An hourly Cron Trigger refreshes the four study-site catalogs into D1.
