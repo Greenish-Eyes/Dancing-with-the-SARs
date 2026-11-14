@@ -20,7 +20,7 @@ uv run pywrangler dev --local
 
 `--local` keeps development on local bindings and avoids the workers.dev subdomain required for remote preview mode. Alternatively, install dependencies with `python -m pip install -r backend/requirements.txt`, apply the local D1 migration, then run `pywrangler dev --local` from the activated environment.
 
-Open the local URL printed by Wrangler. NASA CMR and the map and browse-image providers must be reachable for live data and imagery. Local D1 and R2 data are separate from the remote production resources. Run Python unit tests with `uv run python -m unittest discover -s backend/tests`.
+Open the local URL printed by Wrangler. NASA CMR and the map and browse-image providers must be reachable for live data and imagery. Local D1 and R2 data are separate from the remote production resources. Run Python unit tests with `uv run --directory backend python -m unittest discover -s tests`.
 
 Before deploying, create the configured R2 bucket if it does not exist:
 
@@ -39,6 +39,8 @@ npx wrangler r2 bucket create fieldnotes-images
 ## Python data workflow
 
 The attached notebook demonstrates NASA Earthdata searches with `earthaccess`, temporal and bounding-box filters, granule downloads, and array-based visualization for MODIS HDF4 data. This app applies the search pattern to NISAR GCOV through NASA CMR and returns NISAR metadata and ASF browse images. It does not reuse the notebook's MODIS-specific HDF4 reader or temperature scaling for NISAR products.
+
+The notebook's `earthaccess.login()` is only needed for authenticated NASA data downloads; the app's public CMR catalog search does not need Earthdata credentials. Set `EARTHDATA_USERNAME` in your local shell before running the notebook and let `earthaccess` prompt for any missing credentials. Do not put account passwords in the Worker or repository.
 
 ## API
 

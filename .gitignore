@@ -167,3 +167,6 @@ dist
 .wrangler/
 
 .venv/
+.venv-workers/
+__pycache__/
+*.py[cod]

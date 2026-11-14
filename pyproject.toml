@@ -10,3 +10,7 @@ dev = [
     "workers-py",
     "workers-runtime-sdk",
 ]
+
+[tool.pyright]
+extraPaths = ["backend"]
+stubPath = "backend/typings"

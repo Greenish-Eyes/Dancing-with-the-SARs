@@ -1,7 +1,8 @@
 import unittest
 
-from backend.nisar import bbox_of, parse_bounds, parse_cmr_entry, parse_footprint, snap_bounds
-from backend.browse import parse_browse_url
+from browse import parse_browse_url
+from nisar import bbox_of, parse_bounds, parse_cmr_entry, parse_footprint, snap_bounds
+from runtime import from_js
 
 
 class BoundsTests(unittest.TestCase):
@@ -51,6 +52,12 @@ class BrowseUrlTests(unittest.TestCase):
         rejected = "https://example.com/NISAR/file_LATLON_thumbnail.png"
         self.assertEqual(parse_browse_url(allowed), allowed)
         self.assertIsNone(parse_browse_url(rejected))
+
+
+class RuntimeConversionTests(unittest.TestCase):
+    def test_from_js_keeps_native_d1_rows(self):
+        rows = [{"id": "G123-ASF"}]
+        self.assertIs(from_js(rows), rows)
 
 
 if __name__ == "__main__":

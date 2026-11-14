@@ -2,9 +2,10 @@ import base64
 import json
 import re
 from datetime import datetime
+from typing import Any
 
-from .browse import fetch_browse_image, image_bytes
-from .runtime import to_js_object
+from browse import fetch_browse_image, image_bytes
+from runtime import to_js_object
 
 MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
 EXPLAIN_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
@@ -42,15 +43,15 @@ def _prompt(data: dict) -> str:
     )
 
 
-async def explain_change(request: object, env: object) -> object:
+async def explain_change(request: Any, env: Any) -> Any:
     from workers import Response
 
     try:
         data = json.loads(await request.text())
     except (TypeError, ValueError):
-        return Response.json({"error": "Send a JSON body."}, status=400)
+        return Response.from_json({"error": "Send a JSON body."}, status=400)
     if not isinstance(data, dict):
-        return Response.json(
+        return Response.from_json(
             {"error": "Provide a place and two passes with browse images."},
             status=400,
         )
@@ -66,7 +67,7 @@ async def explain_change(request: object, env: object) -> object:
         or not _valid_scene(data.get("before"))
         or not _valid_scene(data.get("after"))
     ):
-        return Response.json(
+        return Response.from_json(
             {"error": "Provide a place and two passes with browse images."},
             status=400,
         )
@@ -75,11 +76,13 @@ async def explain_change(request: object, env: object) -> object:
     try:
         cached = await env.CACHE.get(cache_key)
         if cached:
-            return Response.json({**json.loads(cached), "cached": True})
+            return Response.from_json({**json.loads(cached), "cached": True})
     except Exception as error:
         print(f"Explanation cache read failed: {error}")
     if not getattr(env, "AI", None):
-        return Response.json({"error": "The AI binding is not configured."}, status=503)
+        return Response.from_json(
+            {"error": "The AI binding is not configured."}, status=503
+        )
 
     try:
         before_type, before_buffer = await fetch_browse_image(
@@ -96,7 +99,7 @@ async def explain_change(request: object, env: object) -> object:
         ).decode("ascii")
     except Exception as error:
         print(f"Browse image fetch failed for AI: {error}")
-        return Response.json(
+        return Response.from_json(
             {"error": "Could not load the browse images for analysis."},
             status=502,
         )
@@ -123,12 +126,14 @@ async def explain_change(request: object, env: object) -> object:
         text = str(getattr(result, "response", result)).strip()
     except Exception as error:
         print(f"Workers AI request failed: {error}")
-        return Response.json(
+        return Response.from_json(
             {"error": "The AI reader is unavailable right now. Try again shortly."},
             status=502,
         )
     if not text:
-        return Response.json({"error": "The AI reader returned no text."}, status=502)
+        return Response.from_json(
+            {"error": "The AI reader returned no text."}, status=502
+        )
 
     payload = {"text": text, "model": MODEL}
     try:
@@ -139,4 +144,4 @@ async def explain_change(request: object, env: object) -> object:
         )
     except Exception as error:
         print(f"Explanation cache write failed: {error}")
-    return Response.json({**payload, "cached": False})
+    return Response.from_json({**payload, "cached": False})

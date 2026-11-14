@@ -1,7 +1,8 @@
 import hashlib
+from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
 
-from .runtime import to_js_object
+from runtime import to_js_object
 
 MAX_URL_LENGTH = 2_048
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -49,7 +50,7 @@ def parse_browse_url(value: str) -> str | None:
 
 
 async def fetch_browse_image(value: str, max_bytes: int = MAX_IMAGE_BYTES) -> tuple[str, object]:
-    from js import AbortSignal, Uint8Array
+    from js import AbortSignal, Request as JSRequest, Uint8Array  # type: ignore[reportMissingModuleSource]
     from workers import fetch
 
     url = parse_browse_url(value)
@@ -57,7 +58,7 @@ async def fetch_browse_image(value: str, max_bytes: int = MAX_IMAGE_BYTES) -> tu
         raise ValueError("Browse images must be PNG files hosted by NASA or ASF.")
 
     for redirect_count in range(MAX_REDIRECTS + 1):
-        response = await fetch(
+        fetch_request = JSRequest.new(
             url,
             to_js_object(
                 {
@@ -67,6 +68,7 @@ async def fetch_browse_image(value: str, max_bytes: int = MAX_IMAGE_BYTES) -> tu
                 }
             ),
         )
+        response = await fetch(fetch_request)
         if 300 <= response.status < 400:
             location = response.headers.get("Location")
             redirected_url = parse_browse_url(urljoin(url, location)) if location else None
@@ -83,10 +85,10 @@ async def fetch_browse_image(value: str, max_bytes: int = MAX_IMAGE_BYTES) -> tu
         content_length = response.headers.get("Content-Length")
         if content_length and int(content_length) > max_bytes:
             raise ValueError("The browse image exceeds the size limit.")
-        image_buffer = await response.arrayBuffer()
-        if image_buffer.byteLength > max_bytes:
-            raise ValueError("The browse image exceeds the size limit.")
+        image_buffer = await response.buffer()
         image_view = Uint8Array.new(image_buffer)
+        if image_view.length > max_bytes:
+            raise ValueError("The browse image exceeds the size limit.")
         signature = bytes(int(image_view[index]) for index in range(len(PNG_SIGNATURE)))
         if signature != PNG_SIGNATURE:
             raise ValueError("The browse image source did not contain a valid PNG image.")
@@ -96,19 +98,19 @@ async def fetch_browse_image(value: str, max_bytes: int = MAX_IMAGE_BYTES) -> tu
 
 
 def image_bytes(image_buffer: object) -> bytes:
-    from js import Uint8Array
+    from js import Uint8Array  # type: ignore[reportMissingModuleSource]
 
     view = Uint8Array.new(image_buffer)
     return bytes(int(view[index]) for index in range(view.length))
 
 
-async def get_browse_image(request: object, env: object) -> object:
+async def get_browse_image(request: Any, env: Any) -> Any:
     from workers import Response
 
     query = parse_qs(urlparse(str(request.url)).query)
     url = parse_browse_url(query.get("url", [""])[0])
     if not url:
-        return Response.json(
+        return Response.from_json(
             {"error": "Provide a valid NISAR PNG browse-image URL from NASA or ASF."},
             status=400,
         )
@@ -132,10 +134,12 @@ async def get_browse_image(request: object, env: object) -> object:
     try:
         content_type, image_buffer = await fetch_browse_image(url)
     except (ValueError, TypeError) as error:
-        return Response.json({"error": str(error)}, status=502)
+        return Response.from_json({"error": str(error)}, status=502)
     except Exception as error:
         print(f"NISAR browse request failed: {error}")
-        return Response.json({"error": "The browse image could not be loaded."}, status=502)
+        return Response.from_json(
+            {"error": "The browse image could not be loaded."}, status=502
+        )
 
     headers = {
         "Cache-Control": CACHE_CONTROL,

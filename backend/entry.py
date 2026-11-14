@@ -2,9 +2,9 @@ from urllib.parse import urlparse
 
 from workers import Response, WorkerEntrypoint
 
-from backend.browse import get_browse_image
-from backend.explain import explain_change
-from backend.nisar import ingest_all_sites, list_nisar_granules, pass_feed
+from browse import get_browse_image
+from explain import explain_change
+from nisar import ingest_all_sites, list_nisar_granules, pass_feed
 
 
 class Default(WorkerEntrypoint):
@@ -19,8 +19,8 @@ class Default(WorkerEntrypoint):
         if path == "/api/nisar/explain" and request.method == "POST":
             return await explain_change(request, self.env)
         if path.startswith("/api/"):
-            return Response.json({"error": "API route not found."}, status=404)
+            return Response.from_json({"error": "API route not found."}, status=404)
         return await self.env.ASSETS.fetch(request)
 
-    async def scheduled(self, controller, env, ctx):
+    async def scheduled(self, _controller, env, _ctx):
         await ingest_all_sites(env)

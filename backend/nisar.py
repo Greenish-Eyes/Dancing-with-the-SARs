@@ -167,8 +167,9 @@ async def fetch_cmr_granules(
     date_range: tuple[str, str] | None,
     page_size: int = 20,
 ) -> list[dict[str, Any]]:
-    from js import AbortSignal
+    from js import AbortSignal, Request as JSRequest  # type: ignore[reportMissingModuleSource]
     from workers import fetch
+    from runtime import to_js_object
 
     params = {
         "collection_concept_id": CMR_COLLECTION_ID,
@@ -180,7 +181,11 @@ async def fetch_cmr_granules(
         params["temporal"] = f"{date_range[0]}T00:00:00Z,{date_range[1]}T23:59:59Z"
     url = f"{CMR_GRANULES_URL}?{urlencode(params)}"
     try:
-        response = await fetch(url, {"signal": AbortSignal.timeout(12_000)})
+        fetch_request = JSRequest.new(
+            url,
+            to_js_object({"signal": AbortSignal.timeout(12_000)}),
+        )
+        response = await fetch(fetch_request)
     except Exception as error:
         print(f"NISAR CMR request failed: {error}")
         raise CmrError("NASA's catalog could not be reached. Try again shortly.") from error
@@ -204,7 +209,7 @@ async def _granules_from_d1(
     start: str | None,
     end: str | None,
 ) -> list[dict[str, Any]]:
-    from .runtime import from_js
+    from runtime import from_js
 
     west, south, east, north = bounds
     result = await db.prepare(
@@ -247,20 +252,20 @@ async def list_nisar_granules(request: Any, env: Any) -> Any:
     bounds_value = query.get("bbox", [""])[0]
     bounds = parse_bounds(bounds_value)
     if bounds is None:
-        return Response.json(
+        return Response.from_json(
             {"error": "Bounding box must be west,south,east,north in geographic ranges."},
             status=400,
         )
     date_range = _date_range(query)
     if isinstance(date_range, str):
-        return Response.json({"error": date_range}, status=400)
+        return Response.from_json({"error": date_range}, status=400)
     start, end = date_range
     snapped = snap_bounds(bounds)
     cache_key = f"granules:v1:{','.join(map(str, snapped))}:{start or 'any'}:{end or 'any'}"
     try:
         cached = await env.CACHE.get(cache_key)
         if cached:
-            return Response.json(json.loads(cached), headers={"X-Cache": "HIT"})
+            return Response.from_json(json.loads(cached), headers={"X-Cache": "HIT"})
     except Exception as error:
         print(f"Catalog cache read failed: {error}")
 
@@ -273,8 +278,10 @@ async def list_nisar_granules(request: Any, env: Any) -> Any:
             print(f"Stored catalog lookup failed: {db_error}")
             stored = []
         if stored:
-            return Response.json({**COLLECTION, "granules": stored}, headers={"X-Cache": "D1"})
-        return Response.json({"error": str(error)}, status=error.status)
+            return Response.from_json(
+                {**COLLECTION, "granules": stored}, headers={"X-Cache": "D1"}
+            )
+        return Response.from_json({"error": str(error)}, status=error.status)
 
     payload = {**COLLECTION, "granules": granules}
     try:
@@ -285,7 +292,7 @@ async def list_nisar_granules(request: Any, env: Any) -> Any:
         )
     except Exception as error:
         print(f"Catalog cache write failed: {error}")
-    return Response.json(payload, headers={"X-Cache": "MISS"})
+    return Response.from_json(payload, headers={"X-Cache": "MISS"})
 
 
 async def _store_granules(db: Any, site: str, granules: list[dict[str, Any]], backfill: bool, now: int) -> int:
@@ -329,7 +336,7 @@ async def _log_ingest(db: Any, now: int, site: str, status: str, found: int, ins
 
 
 async def ingest_all_sites(env: Any) -> None:
-    from .runtime import from_js
+    from runtime import from_js
 
     now = int(datetime.now(timezone.utc).timestamp() * 1000)
     for site_id, site in SITES.items():
@@ -358,19 +365,25 @@ async def ingest_all_sites(env: Any) -> None:
 
 
 async def pass_feed(request: Any, env: Any) -> Any:
-    from .runtime import from_js
+    from runtime import from_js
     from workers import Response
 
     query = parse_qs(urlparse(str(request.url)).query)
     site = query.get("site", [None])[0]
     if site and site not in SITES:
-        return Response.json({"error": "Choose a supported study site."}, status=400)
+        return Response.from_json(
+            {"error": "Choose a supported study site."}, status=400
+        )
     try:
         limit = int(query.get("limit", ["8"])[0])
     except (TypeError, ValueError):
-        return Response.json({"error": "Limit must be an integer from 1 to 30."}, status=400)
+        return Response.from_json(
+            {"error": "Limit must be an integer from 1 to 30."}, status=400
+        )
     if not 1 <= limit <= 30:
-        return Response.json({"error": "Limit must be an integer from 1 to 30."}, status=400)
+        return Response.from_json(
+            {"error": "Limit must be an integer from 1 to 30."}, status=400
+        )
 
     try:
         cutoff = int(datetime.now(timezone.utc).timestamp() * 1000) - NEW_PASS_WINDOW_MS
@@ -386,7 +399,7 @@ async def pass_feed(request: Any, env: Any) -> Any:
         ).first()
         passes = from_js(passes_result.results)
         last_checked = from_js(last_result)["ran_at"] if last_result else None
-        return Response.json(
+        return Response.from_json(
             {
                 "lastChecked": last_checked,
                 "passes": [
@@ -404,4 +417,6 @@ async def pass_feed(request: Any, env: Any) -> Any:
         )
     except Exception as error:
         print(f"Pass feed query failed: {error}")
-        return Response.json({"error": "The pass feed is unavailable right now."}, status=502)
+        return Response.from_json(
+            {"error": "The pass feed is unavailable right now."}, status=502
+        )
