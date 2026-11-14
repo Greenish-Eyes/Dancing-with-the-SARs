@@ -7,6 +7,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 CMR_COLLECTION_ID = "C2854338529-ASF"
 CMR_GRANULES_URL = "https://cmr.earthdata.nasa.gov/search/granules.json"
+MAX_GRANULE_RESULTS = 100
+MAX_DATE_RANGE_DAYS = 3650
 COLLECTION = {
     "collection": "NISAR Provisional L2 GCOV v1",
     "collectionUrl": f"https://search.earthdata.nasa.gov/search/granules?p={CMR_COLLECTION_ID}",
@@ -157,15 +159,15 @@ def _date_range(query: dict[str, list[str]]) -> tuple[str | None, str | None] | 
         return "Choose both dates, with the start date no later than the end date."
     if (
         datetime.strptime(end, "%Y-%m-%d") - datetime.strptime(start, "%Y-%m-%d")
-    ) > timedelta(days=366):
-        return "Date ranges cannot exceed one year."
+    ) > timedelta(days=MAX_DATE_RANGE_DAYS):
+        return "Date ranges cannot exceed 10 years."
     return start, end
 
 
 async def fetch_cmr_granules(
     bounds: list[float],
     date_range: tuple[str, str] | None,
-    page_size: int = 20,
+    page_size: int = MAX_GRANULE_RESULTS,
 ) -> list[dict[str, Any]]:
     from js import AbortSignal, Request as JSRequest  # type: ignore[reportMissingModuleSource]
     from workers import fetch
@@ -218,7 +220,7 @@ async def _granules_from_d1(
            FROM granules
            WHERE west <= ?1 AND east >= ?2 AND south <= ?3 AND north >= ?4
              AND (?5 IS NULL OR time_start >= ?5) AND (?6 IS NULL OR time_start <= ?6)
-           ORDER BY time_start DESC LIMIT 20"""
+           ORDER BY time_start DESC LIMIT ?7"""
     ).bind(
         east,
         west,
@@ -226,6 +228,7 @@ async def _granules_from_d1(
         south,
         f"{start}T00:00:00Z" if start else None,
         f"{end}T23:59:59Z" if end else None,
+        MAX_GRANULE_RESULTS,
     ).all()
     rows = from_js(result.results)
     output = []
@@ -261,7 +264,7 @@ async def list_nisar_granules(request: Any, env: Any) -> Any:
         return Response.from_json({"error": date_range}, status=400)
     start, end = date_range
     snapped = snap_bounds(bounds)
-    cache_key = f"granules:v1:{','.join(map(str, snapped))}:{start or 'any'}:{end or 'any'}"
+    cache_key = f"granules:v2:{','.join(map(str, snapped))}:{start or 'any'}:{end or 'any'}"
     try:
         cached = await env.CACHE.get(cache_key)
         if cached:

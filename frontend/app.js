@@ -220,7 +220,7 @@ function renderTimeline() {
 		return;
 	}
 
-	const ordered = [...granules].reverse();
+	const ordered = [...granules].reverse().slice(0, 100);
 	ordered.forEach((granule, index) => {
 		const button = document.createElement("button");
 		button.type = "button";
@@ -233,7 +233,6 @@ function renderTimeline() {
 		button.append(point, label);
 		button.addEventListener("click", () => selectGranule(granule.id));
 		ui.timeline.append(button);
-		if (index >= 19) return;
 	});
 }
 
@@ -475,15 +474,17 @@ async function searchArea() {
 	stopTimelinePlayback();
 	const thisRequest = ++requestNumber;
 	const [west, south, east, north] = currentBounds();
-	const days = Number(ui.dateWindow.value);
-	const endDate = new Date();
-	const startDate = new Date(endDate);
-	startDate.setUTCDate(startDate.getUTCDate() - days);
 	const query = new URLSearchParams({
 		bbox: [west, south, east, north].map((value) => value.toFixed(5)).join(","),
-		from: startDate.toISOString().slice(0, 10),
-		to: endDate.toISOString().slice(0, 10),
 	});
+	const days = ui.dateWindow.value === "all" ? null : Number(ui.dateWindow.value);
+	if (days !== null) {
+		const endDate = new Date();
+		const startDate = new Date(endDate);
+		startDate.setUTCDate(startDate.getUTCDate() - days);
+		query.set("from", startDate.toISOString().slice(0, 10));
+		query.set("to", endDate.toISOString().slice(0, 10));
+	}
 
 	setMessage("Listening for a NISAR pass…");
 	ui.sceneStatus.innerHTML = '<span class="status-dot"></span>QUERYING NASA CMR';

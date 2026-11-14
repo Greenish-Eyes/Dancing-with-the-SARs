@@ -1,7 +1,7 @@
 import unittest
 
 from browse import parse_browse_url
-from nisar import bbox_of, parse_bounds, parse_cmr_entry, parse_footprint, snap_bounds
+from nisar import _date_range, bbox_of, parse_bounds, parse_cmr_entry, parse_footprint, snap_bounds
 from runtime import from_js
 
 
@@ -15,6 +15,21 @@ class BoundsTests(unittest.TestCase):
 
     def test_snap_bounds_expands_outward(self):
         self.assertEqual(snap_bounds([-60.91, -3.99, -59.01, -2.01]), [-61.0, -4.0, -59.0, -2.0])
+
+
+class DateRangeTests(unittest.TestCase):
+    def test_date_range_accepts_multi_year_windows_and_all_dates(self):
+        self.assertEqual(
+            _date_range({"from": ["2024-01-01"], "to": ["2026-01-01"]}),
+            ("2024-01-01", "2026-01-01"),
+        )
+        self.assertEqual(_date_range({}), (None, None))
+
+    def test_date_range_rejects_windows_over_ten_years(self):
+        self.assertEqual(
+            _date_range({"from": ["2010-01-01"], "to": ["2021-01-01"]}),
+            "Date ranges cannot exceed 10 years.",
+        )
 
 
 class CmrParsingTests(unittest.TestCase):

@@ -2,7 +2,7 @@
 
 Surface Signals is an interactive map for exploring real NISAR scene coverage at four study areas and anywhere else on the map. It searches NASA's Common Metadata Repository (CMR) for the provisional Level 2 Geocoded Polarimetric Covariance (GCOV) collection, then displays scene footprints, acquisition dates, ASF browse images, and links to the source products.
 
-The map uses Esri World Imagery. Drag or zoom to an area and choose **Search this area** to look up its NISAR passes. Choose a study site or date window to refresh the catalog results. Select a footprint, timeline point, or scene to inspect the available browse images. When two or more passes are available, **Compare passes** places their browse images side by side.
+The map uses Esri World Imagery. Drag or zoom to an area and choose **Search this area** to look up its NISAR passes. Choose a study site or a date window from 90 days through five years, or search all dates, to refresh the catalog results. Up to the 100 most recent scenes are shown per map extent. Select a footprint, timeline point, or scene to inspect the available browse images. When two or more passes are available, **Compare passes** places their browse images side by side.
 
 ## Project layout
 
@@ -34,7 +34,7 @@ npx wrangler r2 bucket create fieldnotes-images
 - Footprints and acquisition dates are returned by CMR. Browse imagery and product downloads are linked from the ASF DAAC.
 - These products are provisional. Browse images support visual exploration, not quantitative change detection. Analyze calibrated product pixels before drawing conclusions about surface change.
 - Polarization browse images are available when linked by a scene. Polarimetric channels vary by acquisition mode.
-- The default API date range is supplied by the UI and limited to one year; results are capped at the 20 most recent scenes.
+- The UI offers date windows through five years and an all-dates search. API date ranges may span up to ten years, and each map-extent search is capped at the 100 most recent scenes.
 
 ## Python data workflow
 
