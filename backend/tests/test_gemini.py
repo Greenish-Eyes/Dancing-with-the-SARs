@@ -2,6 +2,7 @@ import json
 import unittest
 
 from gemini import (
+    DEFAULT_MODEL,
     _parse_tour,
     _model_candidates,
     _provider_error_message,
@@ -40,10 +41,10 @@ class GeminiValidationTests(unittest.TestCase):
 
 
 class GeminiOutputTests(unittest.TestCase):
-    def test_primary_model_falls_back_to_supported_flash_model(self):
+    def test_low_latency_model_falls_back_to_supported_flash_model(self):
         self.assertEqual(
-            _model_candidates("gemini-3.8-flash"),
-            ["gemini-3.8-flash", "gemini-3.6-flash"],
+            _model_candidates(DEFAULT_MODEL),
+            [DEFAULT_MODEL, "gemini-3.6-flash"],
         )
         self.assertEqual(_model_candidates("gemini-3.6-flash"), ["gemini-3.6-flash"])
 

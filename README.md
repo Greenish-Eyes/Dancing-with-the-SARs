@@ -6,7 +6,7 @@ The map uses Esri World Imagery, with optional topographic/road and elevation-hi
 
 Enter and submit a city or region name to search OpenStreetMap; choose the matching result to set the map extent and load its NISAR passes. Searches are submit-only (no autocomplete), and the place name is sent to the configured geocoder. Results are cached in KV for seven days, and a D1-backed limiter allows at most one uncached provider request per second across the application. The map displays OpenStreetMap attribution and links to the Nominatim usage policy.
 
-Google Gemini can generate the guided-tour narration, a site-specific field note, a two-pass comparison, or an explanation of a selected change through Google's Interactions API. The image-based actions send NISAR browse images from ASF to Gemini; all outputs are labeled as hypotheses rather than measurements. If the configured `gemini-3.8-flash` model is temporarily overloaded, the Worker retries with `gemini-3.6-flash`. Successful responses are cached for seven days, and uncached AI requests are rate-limited per client.
+Google Gemini can generate the guided-tour narration, a site-specific field note, a two-pass comparison, or an explanation of a selected change through Google's Interactions API. The image-based actions send NISAR browse images from ASF to Gemini; all outputs are labeled as hypotheses rather than measurements. The Worker uses the low-latency `gemini-3.5-flash-lite` model and retries with `gemini-3.6-flash` if it is temporarily overloaded. Successful responses are cached for seven days, and uncached AI requests are rate-limited per client.
 
 ## Project layout
 

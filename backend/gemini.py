@@ -9,7 +9,7 @@ from typing import Any
 from browse import fetch_browse_image, image_bytes
 from runtime import to_js_object
 
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 FALLBACK_MODEL = "gemini-3.6-flash"
 GEMINI_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 MAX_IMAGE_BYTES = 3 * 1024 * 1024
@@ -284,6 +284,7 @@ async def _generate_gemini(
         print(f"NISAR browse images could not be prepared for Gemini: {error}")
         raise GeminiError(502, "Could not load the selected NISAR browse images.") from error
     response_model = model
+    response = None
     for candidate_model in _model_candidates(model):
         request_body = _request_body(
             candidate_model, _prompt(data, mode), image_parts, mode
@@ -336,6 +337,8 @@ async def _generate_gemini(
                 f"Gemini could not complete this request (HTTP 404): {error_message}",
             )
         raise GeminiError(502, f"Gemini could not complete this request (HTTP {response.status}).")
+    if response is None:
+        raise GeminiError(502, "Gemini could not complete this request.")
     try:
         payload = json.loads(await response.text())
     except (TypeError, ValueError) as error:

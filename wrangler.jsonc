@@ -13,7 +13,7 @@
 	},
 	"vars": {
 		"GEOCODER_BASE_URL": "https://nominatim.openstreetmap.org",
-		"GEMINI_MODEL": "gemini-3.8-flash"
+		"GEMINI_MODEL": "gemini-3.5-flash-lite"
 	},
 	"upload_source_maps": true,
 	"kv_namespaces": [
