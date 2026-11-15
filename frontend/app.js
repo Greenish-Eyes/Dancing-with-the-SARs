@@ -177,6 +177,11 @@ const ui = {
 	fieldNoteAiOutput: document.getElementById("field-note-ai-output"),
 	feedList: document.getElementById("feed-list"),
 	feedStatus: document.getElementById("feed-status"),
+	exportGranules: document.getElementById("export-granules"),
+	missionSceneCount: document.getElementById("mission-scene-count"),
+	missionDateRange: document.getElementById("mission-date-range"),
+	missionWindow: document.getElementById("mission-window"),
+	missionInsight: document.getElementById("mission-insight"),
 	siteRegion: document.getElementById("site-region"),
 	siteName: document.getElementById("site-name"),
 	storyEyebrow: document.getElementById("story-eyebrow"),
@@ -957,9 +962,73 @@ function renderSelection() {
 	renderPreview(granule);
 }
 
+function exportCurrentSceneCsv() {
+	if (!granules.length) return;
+	const rows = [
+		["date", "title", "site", "browse_url", "download_url", "west", "south", "east", "north"],
+		...granules.map((granule) => {
+			const points = granule.footprint ?? [];
+			const extents = points.length >= 4
+				? [
+					Math.min(...points.map((point) => point[1])),
+					Math.min(...points.map((point) => point[0])),
+					Math.max(...points.map((point) => point[1])),
+					Math.max(...points.map((point) => point[0])),
+				]
+				: ["", "", "", ""];
+			return [
+				granule.timeStart.slice(0, 10),
+				granule.title,
+				activeStudyArea().name,
+				granule.browseUrl ?? "",
+				granule.downloadUrl ?? "",
+				...extents,
+			];
+		}),
+	];
+	const csv = rows
+		.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+		.join("\n");
+	const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+	const link = document.createElement("a");
+	const url = URL.createObjectURL(blob);
+	link.href = url;
+	link.download = `surface-signals-${new Date().toISOString().slice(0, 10)}.csv`;
+	document.body.append(link);
+	link.click();
+	link.remove();
+	URL.revokeObjectURL(url);
+}
+
+function renderMissionBrief() {
+	const count = granules.length;
+	ui.missionSceneCount.textContent = String(count).padStart(2, "0");
+	ui.exportGranules.disabled = count === 0;
+	ui.exportGranules.style.opacity = count === 0 ? "0.5" : "1";
+	if (count === 0) {
+		ui.missionDateRange.textContent = "—";
+		ui.missionWindow.textContent = "—";
+		ui.missionInsight.textContent = "Select a region to review NISAR coverage and ready-to-share observations.";
+		return;
+	}
+	const sorted = [...granules].sort((left, right) => left.timeStart.localeCompare(right.timeStart));
+	const oldest = sorted[0].timeStart.slice(0, 10);
+	const newest = sorted[sorted.length - 1].timeStart.slice(0, 10);
+	const days = Math.max(1, Math.round((new Date(sorted[sorted.length - 1].timeStart) - new Date(sorted[0].timeStart)) / 86400000));
+	const site = activeStudyArea();
+	ui.missionDateRange.textContent = `${oldest} → ${newest}`;
+	ui.missionWindow.textContent = `${days} d`;
+	if (count === 1) {
+		ui.missionInsight.textContent = `A single NISAR pass is available in this view for ${site.name}. Use the timeline and compare tools to place it in context.`;
+		return;
+	}
+	ui.missionInsight.textContent = `This ${site.name.toLowerCase()} view spans ${days} days across ${count} passes, making it ready for repeat-pass comparison and reporting.`;
+}
+
 function renderResults() {
 	ui.sceneCount.textContent = String(granules.length).padStart(2, "0");
 	ui.panelSceneCount.textContent = String(granules.length).padStart(2, "0");
+	renderMissionBrief();
 	renderFootprints();
 	renderSceneList();
 	renderTimeline();
@@ -1311,6 +1380,7 @@ map.on("moveend", () => {
 		siteMarker.setStyle({ opacity: 1, fillOpacity: 0.95 });
 	}
 });
+ui.exportGranules.addEventListener("click", exportCurrentSceneCsv);
 
 updateMapCenter();
 updateStory(sites[ui.site.value]);

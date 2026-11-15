@@ -6,7 +6,7 @@
     "deploy": "uv run pywrangler deploy",
     "dev": "uv run pywrangler dev --local",
     "start": "uv run pywrangler dev --local",
-    "test": "uv run --directory backend python -m unittest discover -s tests"
+    "test": "cd backend && python -m unittest discover -s tests"
   },
   "devDependencies": {
     "wrangler": "^4.162.0"
