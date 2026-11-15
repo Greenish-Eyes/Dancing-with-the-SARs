@@ -1,7 +1,15 @@
 import json
 import unittest
 
-from gemini import _parse_tour, _prompt, _validate_payload
+from gemini import (
+    _parse_tour,
+    _model_candidates,
+    _provider_error_message,
+    _prompt,
+    _request_body,
+    _response_text,
+    _validate_payload,
+)
 
 
 class GeminiValidationTests(unittest.TestCase):
@@ -32,6 +40,13 @@ class GeminiValidationTests(unittest.TestCase):
 
 
 class GeminiOutputTests(unittest.TestCase):
+    def test_primary_model_falls_back_to_supported_flash_model(self):
+        self.assertEqual(
+            _model_candidates("gemini-3.8-flash"),
+            ["gemini-3.8-flash", "gemini-3.6-flash"],
+        )
+        self.assertEqual(_model_candidates("gemini-3.6-flash"), ["gemini-3.6-flash"])
+
     def test_tour_output_requires_the_expected_chapter_count(self):
         text = json.dumps({"chapters": ["A" * 25, "B" * 25, "C" * 25]})
         self.assertEqual(_parse_tour(text, 3), ["A" * 25, "B" * 25, "C" * 25])
@@ -50,6 +65,37 @@ class GeminiOutputTests(unittest.TestCase):
         )
         self.assertIn("Possible drivers", prompt)
         self.assertIn("not a measurement", prompt)
+
+    def test_interactions_request_supports_images_and_structured_tours(self):
+        body = _request_body(
+            "gemini-2.5-flash",
+            "Tour prompt",
+            [{"type": "image", "data": "encoded", "mime_type": "image/png"}],
+            "tour",
+        )
+        self.assertEqual(body["model"], "gemini-2.5-flash")
+        self.assertEqual(body["input"][0], {"type": "text", "text": "Tour prompt"})
+        self.assertEqual(body["input"][1]["type"], "image")
+        self.assertEqual(body["response_format"]["mime_type"], "application/json")
+        self.assertFalse(body["store"])
+
+    def test_interactions_response_reads_model_output_text(self):
+        text = _response_text(
+            {
+                "steps": [
+                    {"type": "user_input", "content": [{"type": "text", "text": "ignore"}]},
+                    {"type": "model_output", "content": [{"type": "text", "text": "Answer"}]},
+                ]
+            }
+        )
+        self.assertEqual(text, "Answer")
+
+    def test_provider_error_message_redacts_credentials(self):
+        message = _provider_error_message(
+            '{"error":{"message":"Invalid key SECRET_VALUE for model."}}',
+            "SECRET_VALUE",
+        )
+        self.assertEqual(message, "Invalid key [redacted] for model.")
 
 
 if __name__ == "__main__":

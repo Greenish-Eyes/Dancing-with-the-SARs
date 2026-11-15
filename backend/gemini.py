@@ -10,6 +10,7 @@ from browse import fetch_browse_image, image_bytes
 from runtime import to_js_object
 
 DEFAULT_MODEL = "gemini-3.8-flash"
+FALLBACK_MODEL = "gemini-3.6-flash"
 GEMINI_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 MAX_IMAGE_BYTES = 3 * 1024 * 1024
 MAX_SCENES = 3
@@ -42,9 +43,14 @@ SYSTEM_INSTRUCTION = (
 
 
 class GeminiError(Exception):
-    def __init__(self, status: int, message: str):
+    def __init__(self, status: int, message: str, retry_after: str | None = None):
         super().__init__(message)
         self.status = status
+        self.retry_after = retry_after
+
+
+def _model_candidates(model: str) -> list[str]:
+    return [model] if model == FALLBACK_MODEL else [model, FALLBACK_MODEL]
 
 
 def _valid_scene(scene: object, require_image: bool = False) -> bool:
@@ -176,12 +182,14 @@ async def _image_parts(scenes: list[tuple[str, dict[str, Any]]]) -> list[dict[st
             scene["imageUrl"], MAX_IMAGE_BYTES
         )
         return [
-            {"text": f"{label}: {_scene_text(scene)}. This is a provisional geographic browse image."},
             {
-                "inline_data": {
-                    "mime_type": content_type,
-                    "data": base64.b64encode(image_bytes(image_buffer)).decode("ascii"),
-                }
+                "type": "text",
+                "text": f"{label}: {_scene_text(scene)}. This is a provisional geographic browse image.",
+            },
+            {
+                "type": "image",
+                "mime_type": content_type,
+                "data": base64.b64encode(image_bytes(image_buffer)).decode("ascii"),
             },
         ]
 
@@ -192,19 +200,51 @@ async def _image_parts(scenes: list[tuple[str, dict[str, Any]]]) -> list[dict[st
 
 
 def _response_text(payload: Any) -> str:
-    try:
-        candidates = payload["candidates"]
-        parts = candidates[0]["content"]["parts"]
-    except (KeyError, IndexError, TypeError):
+    if not isinstance(payload, dict) or not isinstance(payload.get("steps"), list):
         return ""
     return "\n".join(
-        part["text"].strip()
-        for part in parts
-        if isinstance(part, dict)
-        and isinstance(part.get("text"), str)
-        and part["text"].strip()
-        and not part.get("thought")
+        content["text"].strip()
+        for step in payload["steps"]
+        if isinstance(step, dict) and step.get("type") == "model_output"
+        for content in step.get("content", [])
+        if isinstance(content, dict)
+        and content.get("type") == "text"
+        and isinstance(content.get("text"), str)
+        and content["text"].strip()
     )
+
+
+def _request_body(
+    model: str, prompt: str, image_parts: list[dict[str, Any]], mode: str
+) -> dict[str, Any]:
+    request_body: dict[str, Any] = {
+        "model": model,
+        "input": [{"type": "text", "text": prompt}, *image_parts],
+        "system_instruction": SYSTEM_INSTRUCTION,
+        "generation_config": {"max_output_tokens": 700},
+        "store": False,
+    }
+    if mode == "tour":
+        request_body["response_format"] = {
+            "type": "text",
+            "mime_type": "application/json",
+            "schema": TOUR_RESPONSE_SCHEMA,
+        }
+    return request_body
+
+
+def _provider_error_message(body: str, api_key: str) -> str:
+    try:
+        payload = json.loads(body)
+        message = payload.get("error", {}).get("message", "")
+    except (TypeError, ValueError, AttributeError):
+        return ""
+    if not isinstance(message, str):
+        return ""
+    message = re.sub(r"[\r\n\t]+", " ", message).strip()
+    if api_key:
+        message = message.replace(api_key, "[redacted]")
+    return message[:300]
 
 
 def _parse_tour(text: str, expected_chapters: int) -> list[str]:
@@ -238,46 +278,63 @@ async def _generate_gemini(
         ]
     elif data.get("scene"):
         scenes = [("SELECTED image", data["scene"])]
-    parts = [{"text": _prompt(data, mode)}]
-    request_body: dict[str, Any] = {
-        "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
-        "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"maxOutputTokens": 700},
-    }
-    if mode == "tour":
-        request_body["generationConfig"]["responseMimeType"] = "application/json"
-        request_body["generationConfig"]["responseJsonSchema"] = TOUR_RESPONSE_SCHEMA
     try:
-        parts.extend(await _image_parts(scenes))
+        image_parts = await _image_parts(scenes)
     except Exception as error:
         print(f"NISAR browse images could not be prepared for Gemini: {error}")
         raise GeminiError(502, "Could not load the selected NISAR browse images.") from error
-    request_body["contents"][0]["parts"] = parts
-    request = JSRequest.new(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        to_js_object(
-            {
-                "method": "POST",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "x-goog-api-key": str(env.GEMINI_API_KEY).strip(),
-                },
-                "body": json.dumps(request_body),
-                "redirect": "manual",
-                "signal": AbortSignal.timeout(45_000),
-            }
-        ),
-    )
-    response = await fetch(request)
-    if 300 <= response.status < 400:
-        raise GeminiError(502, "Gemini redirected the request instead of returning a response.")
-    if not response.ok:
-        print(f"Gemini API returned HTTP {response.status}")
+    response_model = model
+    for candidate_model in _model_candidates(model):
+        request_body = _request_body(
+            candidate_model, _prompt(data, mode), image_parts, mode
+        )
+        request = JSRequest.new(
+            "https://generativelanguage.googleapis.com/v1beta/interactions",
+            to_js_object(
+                {
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "x-goog-api-key": str(env.GEMINI_API_KEY).strip(),
+                    },
+                    "body": json.dumps(request_body),
+                    "redirect": "manual",
+                    "signal": AbortSignal.timeout(45_000),
+                }
+            )
+        )
+        response = await fetch(request)
+        if 300 <= response.status < 400:
+            raise GeminiError(502, "Gemini redirected the request instead of returning a response.")
+        if response.ok:
+            response_model = candidate_model
+            break
+        error_message = _provider_error_message(
+            await response.text(), str(env.GEMINI_API_KEY).strip()
+        )
+        print(
+            f"Gemini API returned HTTP {response.status}"
+            + (f": {error_message}" if error_message else "")
+        )
+        if response.status == 503 and candidate_model != FALLBACK_MODEL:
+            print(f"Retrying Gemini request with fallback model {FALLBACK_MODEL}.")
+            continue
+        if response.status == 503:
+            raise GeminiError(
+                503,
+                "Gemini is temporarily experiencing high demand. Please try again shortly.",
+                retry_after="15",
+            )
         if response.status == 429:
             raise GeminiError(429, "Gemini usage limit reached. Try again later.")
         if response.status in (401, 403):
             raise GeminiError(503, "Gemini rejected the key or API access. Check the Worker secret and key permissions.")
+        if response.status == 404 and error_message:
+            raise GeminiError(
+                502,
+                f"Gemini could not complete this request (HTTP 404): {error_message}",
+            )
         raise GeminiError(502, f"Gemini could not complete this request (HTTP {response.status}).")
     try:
         payload = json.loads(await response.text())
@@ -290,11 +347,11 @@ async def _generate_gemini(
         try:
             return {
                 "chapters": _parse_tour(text, len(data["scenes"]) + 2),
-                "model": model,
+                "model": response_model,
             }
         except ValueError as error:
             raise GeminiError(502, str(error)) from error
-    return {"text": text, "model": model}
+    return {"text": text, "model": response_model}
 
 
 async def _rate_limit(env: Any, request: Any) -> bool:
@@ -367,7 +424,10 @@ async def gemini_insight(
     try:
         payload = await _generate_gemini(env, model, mode, data)
     except GeminiError as error:
-        return Response.from_json({"error": str(error)}, status=error.status)
+        headers = {"Retry-After": error.retry_after} if error.retry_after else {}
+        return Response.from_json(
+            {"error": str(error)}, status=error.status, headers=headers
+        )
     except Exception as error:
         print(f"Gemini request failed: {error}")
         return Response.from_json(
