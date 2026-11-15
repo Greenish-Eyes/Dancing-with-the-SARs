@@ -3,6 +3,8 @@ const sites = {
 		name: "Amazon floodplain",
 		theme: "seasonal flooding and forest structure along a large river floodplain",
 		region: "AMAZONAS, BRAZIL",
+		impactQuestion: "Where should field teams prioritize checks for seasonal inundation beneath forest canopy?",
+		validationData: "river-stage and rainfall records, land-cover data, and calibrated repeat-pass products",
 		headline: ["THE", "RHYTHM", "OF WATER"],
 		eyebrow: "LIVE STUDY / WETLAND DYNAMICS",
 		story: "Following seasonal inundation through the forest canopy.",
@@ -24,6 +26,8 @@ const sites = {
 		name: "Mississippi Delta",
 		theme: "coastal wetlands, marsh loss, and river delta flooding",
 		region: "LOUISIANA, USA",
+		impactQuestion: "Where should coastal teams investigate possible changes along the marsh–water boundary?",
+		validationData: "tide and water-level records, elevation, land-cover data, and calibrated repeat-pass products",
 		headline: ["WHERE", "LAND", "MEETS TIDE"],
 		eyebrow: "LIVE STUDY / COASTAL WETLANDS",
 		story: "Following the shifting edge between tidal marsh and open water.",
@@ -45,6 +49,8 @@ const sites = {
 		name: "South Iceland",
 		theme: "glaciers, snow and ice, and volcanic terrain",
 		region: "SOUTHERN REGION, ICELAND",
+		impactQuestion: "Which ice and snow areas merit same-season follow-up observations?",
+		validationData: "weather and snow records, glacier observations, and calibrated repeat-pass products",
 		headline: ["ICE", "ON THE", "MOVE"],
 		eyebrow: "LIVE STUDY / GLACIER DYNAMICS",
 		story: "Exploring radar observations over ice, meltwater, and volcanic terrain.",
@@ -66,6 +72,8 @@ const sites = {
 		name: "Jakarta basin",
 		theme: "dense urban area with land subsidence and coastal flooding",
 		region: "JAKARTA, INDONESIA",
+		impactQuestion: "Where should investigators prioritize validation of possible surface or water-pattern changes?",
+		validationData: "repeat-pass interferometry, ground-position measurements, and local water-level records",
 		headline: ["A CITY", "AT THE", "WATER'S EDGE"],
 		eyebrow: "LIVE STUDY / URBAN CHANGE",
 		story: "Exploring radar observations across a growing coastal megacity.",
@@ -89,6 +97,8 @@ const mapAreaStory = {
 	name: "Selected map area",
 	theme: "surface change across a user-selected region",
 	region: "USER-DEFINED MAP EXTENT",
+	impactQuestion: "What surface patterns in this area warrant closer investigation?",
+	validationData: "local land-cover, weather, water-level, and elevation records alongside calibrated NISAR products",
 	headline: ["A REGION", "IN", "MOTION"],
 	eyebrow: "LIVE STUDY / USER-DEFINED AREA",
 	story: "Explore NISAR observations across the current map extent.",
@@ -181,6 +191,7 @@ const ui = {
 	missionSceneCount: document.getElementById("mission-scene-count"),
 	missionDateRange: document.getElementById("mission-date-range"),
 	missionWindow: document.getElementById("mission-window"),
+	missionQuestion: document.getElementById("mission-question"),
 	missionInsight: document.getElementById("mission-insight"),
 	siteRegion: document.getElementById("site-region"),
 	siteName: document.getElementById("site-name"),
@@ -213,6 +224,7 @@ const ui = {
 };
 
 let granules = [];
+let catalogStatus = "loading";
 let selectedId = null;
 let selectedChannel = "quicklook";
 let compareMode = false;
@@ -649,7 +661,7 @@ async function openStoryMode() {
 				{
 					label: "FIELD GUIDE",
 					title: `${site.name}: a radar story`,
-					copy: `${site.story} This guided sequence uses up to three distinct acquisition dates in the current catalog results, then closes with physical-driver hypotheses to investigate.`,
+					copy: `FIELD QUESTION: ${site.impactQuestion} ${site.story} NASA NISAR provides repeat L-band observations to help identify patterns for follow-up—not to confirm a hazard or measure change from a browse image. This tour follows up to three distinct acquisition dates, then closes with hypotheses to test.`,
 				},
 				...scenes.map((scene, index) => ({
 					label: `PASS ${index + 1} OF ${scenes.length}`,
@@ -1005,24 +1017,29 @@ function renderMissionBrief() {
 	ui.missionSceneCount.textContent = String(count).padStart(2, "0");
 	ui.exportGranules.disabled = count === 0;
 	ui.exportGranules.style.opacity = count === 0 ? "0.5" : "1";
+	const site = activeStudyArea();
+	ui.missionQuestion.textContent = site.impactQuestion;
 	if (count === 0) {
 		ui.missionDateRange.textContent = "—";
 		ui.missionWindow.textContent = "—";
-		ui.missionInsight.textContent = "Select a region to review NISAR coverage and ready-to-share observations.";
+		ui.missionInsight.textContent = catalogStatus === "error"
+			? "NASA CMR could not be reached, so coverage is unknown. Retry the search when the catalog is available."
+			: catalogStatus === "loading"
+				? "Searching NASA CMR for NISAR GCOV scenes in this area and time window."
+				: "No NISAR GCOV scenes are in this view for the selected time window. Try a wider date range or search area; no coverage is not evidence that change is absent.";
 		return;
 	}
 	const sorted = [...granules].sort((left, right) => left.timeStart.localeCompare(right.timeStart));
 	const oldest = sorted[0].timeStart.slice(0, 10);
 	const newest = sorted[sorted.length - 1].timeStart.slice(0, 10);
 	const days = Math.max(1, Math.round((new Date(sorted[sorted.length - 1].timeStart) - new Date(sorted[0].timeStart)) / 86400000));
-	const site = activeStudyArea();
 	ui.missionDateRange.textContent = `${oldest} → ${newest}`;
 	ui.missionWindow.textContent = `${days} d`;
 	if (count === 1) {
-		ui.missionInsight.textContent = `A single NISAR pass is available in this view for ${site.name}. Use the timeline and compare tools to place it in context.`;
+		ui.missionInsight.textContent = `NASA CMR returned one NISAR GCOV scene for ${site.name}. One acquisition date cannot establish change; widen the time window or map extent before comparing. Validate candidate patterns with ${site.validationData}.`;
 		return;
 	}
-	ui.missionInsight.textContent = `This ${site.name.toLowerCase()} view spans ${days} days across ${count} passes, making it ready for repeat-pass comparison and reporting.`;
+	ui.missionInsight.textContent = `NASA CMR returned ${count} NISAR GCOV scenes across ${days} days. Compare repeat passes to identify patterns for follow-up with ${site.validationData}. Browse images are exploratory, not calibrated change measurements.`;
 }
 
 function renderResults() {
@@ -1039,6 +1056,7 @@ async function searchArea(boundsOverride) {
 	stopTimelinePlayback();
 	resetGeneratedInsights();
 	hideExplanation();
+	catalogStatus = "loading";
 	const thisRequest = ++requestNumber;
 	const studyArea = boundsOverride && customPlace ? customPlace : activeStudyArea();
 	const bounds = boundsOverride ?? (studyArea === customPlace ? customPlace.bounds : currentBounds());
@@ -1068,6 +1086,7 @@ async function searchArea(boundsOverride) {
 		}
 		if (!response.ok) throw new Error(result.error || `Catalog request failed (${response.status}).`);
 		if (thisRequest !== requestNumber) return;
+		catalogStatus = "ready";
 		granules = result.granules;
 		selectedId = granules.some((item) => item.id === pendingSelectId) ? pendingSelectId : (granules[0]?.id ?? null);
 		pendingSelectId = null;
@@ -1079,6 +1098,7 @@ async function searchArea(boundsOverride) {
 		ui.sceneStatus.innerHTML = `<span class="status-dot"></span>${granules.length} SCENE${granules.length === 1 ? "" : "S"} · ${({ HIT: "CACHED", D1: "STORED COPY" })[response.headers.get("X-Cache")] ?? "NASA CMR"}`;
 	} catch (error) {
 		if (thisRequest !== requestNumber) return;
+		catalogStatus = "error";
 		granules = [];
 		selectedId = null;
 		renderResults();
@@ -1172,6 +1192,8 @@ function chooseSite(siteId) {
 function updateStory(site) {
 	ui.siteRegion.textContent = site.region;
 	ui.siteName.textContent = site.name;
+	ui.missionQuestion.textContent = site.impactQuestion;
+	ui.missionInsight.textContent = "Searching NASA CMR for NISAR GCOV scenes in this area and time window.";
 	ui.storyEyebrow.textContent = site.eyebrow;
 	ui.storyFirst.textContent = site.headline[0];
 	ui.storyEmphasis.textContent = site.headline[1];
