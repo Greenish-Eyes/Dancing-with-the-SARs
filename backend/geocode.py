@@ -141,7 +141,7 @@ async def geocode_places(request: Any, env: Any) -> Any:
                         "Accept": "application/json",
                         "User-Agent": USER_AGENT,
                     },
-                    "redirect": "error",
+                    "redirect": "manual",
                     "signal": AbortSignal.timeout(10_000),
                 }
             ),
@@ -151,6 +151,12 @@ async def geocode_places(request: Any, env: Any) -> Any:
         print(f"Place search provider request failed: {error}")
         return Response.from_json(
             {"error": "The place search provider could not be reached. Try again shortly."},
+            status=502,
+        )
+    if 300 <= response.status < 400:
+        print(f"Place search provider redirected the request to HTTP {response.status}")
+        return Response.from_json(
+            {"error": "The place search provider redirected the request instead of returning results."},
             status=502,
         )
     if not response.ok:

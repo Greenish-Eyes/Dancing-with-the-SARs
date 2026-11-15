@@ -4,6 +4,7 @@ from workers import Response, WorkerEntrypoint
 
 from browse import get_browse_image
 from explain import explain_change
+from gemini import generate_insight
 from geocode import geocode_places
 from nisar import ingest_all_sites, list_nisar_granules, pass_feed
 
@@ -21,6 +22,8 @@ class Default(WorkerEntrypoint):
             return await get_browse_image(request, self.env)
         if path == "/api/nisar/explain" and request.method == "POST":
             return await explain_change(request, self.env)
+        if path == "/api/nisar/insight" and request.method == "POST":
+            return await generate_insight(request, self.env)
         if path.startswith("/api/"):
             return Response.from_json({"error": "API route not found."}, status=404)
         return await self.env.ASSETS.fetch(request)

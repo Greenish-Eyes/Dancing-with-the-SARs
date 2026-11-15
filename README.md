@@ -6,6 +6,8 @@ The map uses Esri World Imagery, with optional topographic/road and elevation-hi
 
 Enter and submit a city or region name to search OpenStreetMap; choose the matching result to set the map extent and load its NISAR passes. Searches are submit-only (no autocomplete), and the place name is sent to the configured geocoder. Results are cached in KV for seven days, and a D1-backed limiter allows at most one uncached provider request per second across the application. The map displays OpenStreetMap attribution and links to the Nominatim usage policy.
 
+Google Gemini can generate the guided-tour narration, a site-specific field note, a two-pass comparison, or an explanation of a selected change. The image-based actions send NISAR browse images from ASF to Gemini; all outputs are labeled as hypotheses rather than measurements. Successful responses are cached for seven days, and uncached AI requests are rate-limited per client.
+
 ## Project layout
 
 - `frontend/` contains the browser application.
@@ -20,7 +22,15 @@ npx wrangler d1 migrations apply fieldnotes-db --local
 uv run pywrangler dev --local
 ```
 
-`--local` keeps development on local bindings and avoids the workers.dev subdomain required for remote preview mode. Alternatively, install dependencies with `python -m pip install -r backend/requirements.txt`, apply the local D1 migration, then run `pywrangler dev --local` from the activated environment. Apply all D1 migrations to the production database before deploying. The Nominatim-compatible endpoint is set by the non-secret `GEOCODER_BASE_URL` Wrangler variable and can be changed without modifying application code.
+`--local` keeps development on local bindings and avoids the workers.dev subdomain required for remote preview mode. Alternatively, install dependencies with `python -m pip install -r backend/requirements.txt`, apply the local D1 migration, then run `pywrangler dev --local` from the activated environment. Apply all D1 migrations to the production database before deploying. The Nominatim-compatible endpoint and Gemini model are non-secret Wrangler variables (`GEOCODER_BASE_URL` and `GEMINI_MODEL`).
+
+Create a Gemini API-restricted key (or another currently supported Gemini authorization key). For local Gemini use, add `GEMINI_API_KEY="your-key"` to the root `.dev.vars` file. For a deployed Worker, set the encrypted secret with `npx wrangler secret put GEMINI_API_KEY`. Never put the key in `wrangler.jsonc`, frontend code, or a committed file. Gemini requests are made server-side.
+
+Apply the production schema before deploying the Worker:
+
+```sh
+npx wrangler d1 migrations apply fieldnotes-db --remote
+```
 
 Open the local URL printed by Wrangler. NASA CMR and the map and browse-image providers must be reachable for live data and imagery. Local D1 and R2 data are separate from the remote production resources. Run Python unit tests with `uv run --directory backend python -m unittest discover -s tests`.
 
@@ -50,5 +60,6 @@ The notebook's `earthaccess.login()` is only needed for authenticated NASA data 
 - `GET /api/nisar/geocode?q=<place-name>` — search the configured Nominatim-compatible service and return up to five selectable locations.
 - `GET /api/nisar/browse?url=<encoded-ASF-or-NASA-PNG-URL>` — validate, proxy, and cache NISAR PNG browse images in R2.
 - `GET /api/nisar/feed?site=amazon&limit=8` — list recently cataloged passes from D1.
-- `POST /api/nisar/explain` — compare two browse images with Workers AI.
+- `POST /api/nisar/insight` — Gemini actions: `tour`, `field_note`, `compare`, and `explain`.
+- `POST /api/nisar/explain` — compatibility route for the Gemini change explanation.
 - An hourly Cron Trigger refreshes the four study-site catalogs into D1.

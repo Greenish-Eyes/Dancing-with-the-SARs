@@ -167,10 +167,14 @@ const ui = {
 	channel: document.getElementById("channel-select"),
 	channelAvailability: document.getElementById("channel-availability-list"),
 	compare: document.getElementById("compare-button"),
+	compareAI: document.getElementById("compare-ai"),
 	compareCount: document.getElementById("compare-count"),
+	compareInsight: document.getElementById("compare-insight"),
 	download: document.getElementById("download-link"),
 	explain: document.getElementById("explain-button"),
 	explainPanel: document.getElementById("explain-panel"),
+	fieldNoteAi: document.getElementById("field-note-ai"),
+	fieldNoteAiOutput: document.getElementById("field-note-ai-output"),
 	feedList: document.getElementById("feed-list"),
 	feedStatus: document.getElementById("feed-status"),
 	siteRegion: document.getElementById("site-region"),
@@ -190,6 +194,8 @@ const ui = {
 	storyStepLabel: document.getElementById("story-step-label"),
 	storyStepTitle: document.getElementById("story-step-title"),
 	storyStepCopy: document.getElementById("story-step-copy"),
+	storyAiCopy: document.getElementById("story-ai-copy"),
+	storyAiStatus: document.getElementById("story-ai-status"),
 	storyHypotheses: document.getElementById("story-hypotheses"),
 	storyMedia: document.getElementById("story-media"),
 	storyPrevious: document.getElementById("story-prev"),
@@ -212,6 +218,11 @@ let explainKey = null;
 let timelineTimer = null;
 let storySteps = [];
 let storyStepIndex = 0;
+let storyAiChapters = [];
+let storyAiNumber = 0;
+let fieldNoteRequestNumber = 0;
+let compareInsightNumber = 0;
+let compareInsightKey = null;
 let customPlace = null;
 let lastPlaceSearchAt = 0;
 const polygonById = new Map();
@@ -580,6 +591,8 @@ function renderStoryStep() {
 	ui.storyStepLabel.textContent = step.label;
 	ui.storyStepTitle.textContent = step.title;
 	ui.storyStepCopy.textContent = step.copy;
+	ui.storyAiCopy.textContent = storyAiChapters[storyStepIndex] ?? "";
+	ui.storyAiCopy.parentElement.hidden = !ui.storyAiCopy.textContent;
 	ui.storyHypotheses.replaceChildren();
 	for (const hypothesis of step.hypotheses ?? []) {
 		const item = document.createElement("li");
@@ -648,8 +661,15 @@ async function openStoryMode() {
 			];
 		}
 		storyStepIndex = 0;
+		storyAiChapters = [];
+		ui.storyAiStatus.textContent = "";
 		ui.storyDialog.showModal();
 		renderStoryStep();
+		if (scenes.length >= 2) {
+			void generateGeminiTour(site, scenes);
+		} else {
+			ui.storyAiStatus.textContent = "Gemini tour narration needs at least two distinct passes.";
+		}
 	} finally {
 		ui.storyOpen.disabled = false;
 	}
@@ -665,70 +685,215 @@ function hideExplanation() {
 	ui.explain.append(Object.assign(document.createElement("span"), { className: "explain-icon", textContent: "✦" }), " Explain this change");
 }
 
-function showExplanation(kicker, paragraphs, footnote, state = "ready") {
-	ui.explainPanel.replaceChildren();
-	ui.explainPanel.classList.remove("hidden", "error");
-	if (state === "error") ui.explainPanel.classList.add("error");
+function showGeminiPanel(panel, kicker, text, footnote, state = "ready") {
+	panel.replaceChildren();
+	panel.classList.remove("hidden", "error");
+	if (state === "error") panel.classList.add("error");
 	const head = document.createElement("div");
 	head.className = "explain-kicker";
 	head.textContent = kicker;
-	ui.explainPanel.append(head);
-	for (const text of paragraphs) {
+	panel.append(head);
+	for (const paragraph of text.split(/\n+/).map((line) => line.trim()).filter(Boolean)) {
 		const p = document.createElement("p");
-		p.textContent = text;
-		ui.explainPanel.append(p);
+		p.textContent = paragraph;
+		panel.append(p);
 	}
 	if (footnote) {
 		const foot = document.createElement("div");
 		foot.className = "explain-foot";
 		foot.textContent = footnote;
-		ui.explainPanel.append(foot);
+		panel.append(foot);
+	}
+}
+
+function showExplanation(kicker, paragraphs, footnote, state = "ready") {
+	showGeminiPanel(ui.explainPanel, kicker, paragraphs.join("\n"), footnote, state);
+}
+
+function clearCompareInsight() {
+	compareInsightNumber++;
+	compareInsightKey = null;
+	ui.compareAI.classList.remove("busy");
+	ui.compareAI.disabled = false;
+	ui.compareInsight.classList.add("hidden");
+	ui.compareInsight.replaceChildren();
+}
+
+function resetGeneratedInsights() {
+	fieldNoteRequestNumber++;
+	ui.fieldNoteAi.disabled = false;
+	ui.fieldNoteAiOutput.textContent = "";
+	ui.fieldNoteAiOutput.classList.remove("error");
+	clearCompareInsight();
+}
+
+function activeChannelLabel(granule = getSelectedGranule()) {
+	const channel = granule?.browseChannels.find(
+		(item) => `${item.frequency}-${item.polarization}` === selectedChannel,
+	);
+	return channel ? `FREQUENCY ${channel.frequency} · ${channel.polarization}` : "Geographic quicklook";
+}
+
+function sceneStamp(scene, channelSelection = selectedChannel) {
+	const channel = scene.browseChannels?.find(
+		(item) => `${item.frequency}-${item.polarization}` === channelSelection,
+	);
+	return {
+		id: scene.id,
+		date: scene.timeStart.slice(0, 10),
+		imageUrl: channel?.href ?? scene.browseUrl ?? "",
+	};
+}
+
+function geminiContext() {
+	const area = activeStudyArea();
+	const { place, theme } = describePlace();
+	const selected = getSelectedGranule();
+	return {
+		place,
+		theme,
+		channel: activeChannelLabel(selected),
+		date: selected?.timeStart.slice(0, 10) ?? "",
+		radarContext: area.radarContext?.summary ?? "",
+		fieldNote: area.fieldNote ?? "",
+		hypotheses: area.hypotheses ?? [],
+	};
+}
+
+async function requestGeminiInsight(mode, extra = {}) {
+	const response = await fetch("/api/nisar/insight", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ ...geminiContext(), mode, ...extra }),
+	});
+	let result;
+	try {
+		result = await response.json();
+	} catch {
+		throw new Error("The Gemini response could not be read.");
+	}
+	if (!response.ok) throw new Error(result.error || `Gemini request failed (${response.status}).`);
+	return result;
+}
+
+async function generateGeminiTour(site, scenes) {
+	const thisRequest = ++storyAiNumber;
+	ui.storyAiStatus.textContent = "Gemini is preparing the guided narration…";
+	try {
+		const result = await requestGeminiInsight("tour", {
+			radarContext: site.radarContext.summary,
+			fieldNote: site.fieldNote,
+			hypotheses: site.hypotheses,
+			scenes: scenes.map(sceneStamp),
+		});
+		if (thisRequest !== storyAiNumber || !ui.storyDialog.open) return;
+		if (!Array.isArray(result.chapters) || result.chapters.length !== storySteps.length) {
+			throw new Error("Gemini returned an incomplete tour.");
+		}
+		storyAiChapters = result.chapters;
+		ui.storyAiStatus.textContent = `${result.cached ? "CACHED · " : ""}GOOGLE GEMINI · ${result.model}`;
+		renderStoryStep();
+	} catch (error) {
+		if (thisRequest !== storyAiNumber || !ui.storyDialog.open) return;
+		ui.storyAiStatus.textContent = `Gemini tour narration unavailable: ${error instanceof Error ? error.message : "request failed"}. The field guide remains available.`;
+	}
+}
+
+async function generateGeminiFieldNote() {
+	const thisRequest = ++fieldNoteRequestNumber;
+	ui.fieldNoteAi.disabled = true;
+	ui.fieldNoteAiOutput.classList.remove("error");
+	ui.fieldNoteAiOutput.textContent = "Gemini is preparing a field note…";
+	try {
+		const selected = getSelectedGranule();
+		const result = await requestGeminiInsight("field_note", {
+			scene: selected ? sceneStamp(selected) : undefined,
+		});
+		if (thisRequest !== fieldNoteRequestNumber) return;
+		ui.fieldNoteAiOutput.textContent = `${result.text}\n\n${result.cached ? "CACHED · " : ""}GOOGLE GEMINI · ${result.model}`;
+	} catch (error) {
+		if (thisRequest !== fieldNoteRequestNumber) return;
+		ui.fieldNoteAiOutput.classList.add("error");
+		ui.fieldNoteAiOutput.textContent = `Gemini field note unavailable: ${error instanceof Error ? error.message : "request failed"}`;
+	} finally {
+		if (thisRequest === fieldNoteRequestNumber) ui.fieldNoteAi.disabled = false;
+	}
+}
+
+async function generateGeminiComparison() {
+	const pair = comparePair(getSelectedGranule());
+	if (!pair) return;
+	const thisRequest = ++compareInsightNumber;
+	const key = `${pair.before.id}:${pair.after.id}:${selectedChannel}`;
+	compareInsightKey = key;
+	const channelSelection = pair.channel ? selectedChannel : "quicklook";
+	showGeminiPanel(ui.compareInsight, "GEMINI PASS COMPARISON", "Comparing the selected passes…", null);
+	ui.compareAI.disabled = true;
+	ui.compareAI.classList.add("busy");
+	try {
+		const result = await requestGeminiInsight("compare", {
+			channel: pair.channel
+				? `FREQUENCY ${pair.channel.frequency} · ${pair.channel.polarization}`
+				: "Geographic quicklook",
+			before: sceneStamp(pair.before, channelSelection),
+			after: sceneStamp(pair.after, channelSelection),
+		});
+		if (thisRequest !== compareInsightNumber || compareInsightKey !== key) return;
+		showGeminiPanel(
+			ui.compareInsight,
+			"GEMINI COMPARISON · VISUAL HYPOTHESES",
+			result.text,
+			`${result.cached ? "CACHED · " : ""}GOOGLE GEMINI · ${result.model}`,
+		);
+	} catch (error) {
+		if (thisRequest !== compareInsightNumber || compareInsightKey !== key) return;
+		showGeminiPanel(
+			ui.compareInsight,
+			"GEMINI COMPARISON UNAVAILABLE",
+			error instanceof Error ? error.message : "The request failed.",
+			null,
+			"error",
+		);
+	} finally {
+		if (thisRequest === compareInsightNumber) {
+			ui.compareAI.classList.remove("busy");
+			renderSelection();
+		}
 	}
 }
 
 async function explainSelectedChange() {
 	const pair = comparePair(getSelectedGranule());
-	if (!pair?.before.browseUrl || !pair.after.browseUrl) return;
-	const key = `${pair.before.id}:${pair.after.id}`;
+	if (!pair) return;
+	const channelSelection = pair.channel ? selectedChannel : "quicklook";
+	if (!sceneStamp(pair.before, channelSelection).imageUrl || !sceneStamp(pair.after, channelSelection).imageUrl) return;
+	const key = `${pair.before.id}:${pair.after.id}:${selectedChannel}`;
 	const thisRequest = ++explainNumber;
 	explainKey = key;
 	compareMode = true;
 	renderSelection();
 	ui.explain.disabled = true;
 	ui.explain.classList.add("busy");
-	showExplanation("AI READING", ["Comparing the two passes…"], null);
-	const { place, theme } = describePlace();
-	const stamp = (scene) => ({ id: scene.id, date: scene.timeStart.slice(0, 10), imageUrl: scene.browseUrl });
+	showExplanation("GOOGLE GEMINI · CHANGE EXPLANATION", ["Comparing the two passes…"], null);
 	try {
-		const response = await fetch("/api/nisar/explain", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				place,
-				theme,
-				layer: "Geographic quicklook",
-				before: stamp(pair.before),
-				after: stamp(pair.after),
-			}),
+		const result = await requestGeminiInsight("explain", {
+			channel: pair.channel
+				? `FREQUENCY ${pair.channel.frequency} · ${pair.channel.polarization}`
+				: "Geographic quicklook",
+			before: sceneStamp(pair.before, channelSelection),
+			after: sceneStamp(pair.after, channelSelection),
 		});
-		let result;
-		try {
-			result = await response.json();
-		} catch {
-			throw new Error("The AI response could not be read.");
-		}
-		if (!response.ok) throw new Error(result.error || `AI request failed (${response.status}).`);
 		if (thisRequest !== explainNumber || explainKey !== key) return;
 		const paragraphs = result.text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
 		showExplanation(
-			"AI READING · HYPOTHESES, NOT MEASUREMENTS",
+			"GEMINI READING · HYPOTHESES, NOT MEASUREMENTS",
 			paragraphs,
-			`${result.cached ? "CACHED · " : ""}WORKERS AI · LLAMA 4 SCOUT`,
+			`${result.cached ? "CACHED · " : ""}GOOGLE GEMINI · ${result.model}`,
 		);
 	} catch (error) {
 		if (thisRequest !== explainNumber) return;
-		const detail = error instanceof Error ? error.message : "The AI request failed.";
-		showExplanation("AI READING UNAVAILABLE", [detail], null, "error");
+		const detail = error instanceof Error ? error.message : "The Gemini request failed.";
+		showExplanation("GEMINI READING UNAVAILABLE", [detail], null, "error");
 	} finally {
 		if (thisRequest === explainNumber) {
 			ui.explain.classList.remove("busy");
@@ -745,8 +910,11 @@ function renderSelection() {
 		ui.latestPassDate.textContent = "No pass in view";
 		ui.latestPassHint.textContent = "Try another area or time window";
 		ui.compare.disabled = true;
+		ui.compareAI.disabled = true;
+		ui.compareAI.hidden = true;
 		ui.explain.disabled = true;
 		ui.compareCount.textContent = "0 passes";
+		if (compareInsightKey) clearCompareInsight();
 		ui.download.classList.add("disabled");
 		ui.download.removeAttribute("href");
 		renderChannelOptions(null);
@@ -766,8 +934,19 @@ function renderSelection() {
 	ui.compareCount.textContent = granules.length > 1 ? `${granules.length - 1} earlier` : "1 pass";
 	ui.compare.classList.toggle("comparison-active", compareMode);
 	const pair = comparePair(granule);
-	ui.explain.disabled = !pair?.before.browseUrl || !pair.after.browseUrl || ui.explain.classList.contains("busy");
-	if (explainKey && (!pair || explainKey !== `${pair.before.id}:${pair.after.id}`)) hideExplanation();
+	const pairKey = pair ? `${pair.before.id}:${pair.after.id}:${selectedChannel}` : null;
+	const channelSelection = pair?.channel ? selectedChannel : "quicklook";
+	if (compareInsightKey && compareInsightKey !== pairKey) clearCompareInsight();
+	ui.compareAI.hidden = !compareMode;
+	ui.compareAI.disabled = !pair
+		|| !sceneStamp(pair.before, channelSelection).imageUrl
+		|| !sceneStamp(pair.after, channelSelection).imageUrl
+		|| ui.compareAI.classList.contains("busy");
+	ui.explain.disabled = !pair
+		|| !sceneStamp(pair.before, channelSelection).imageUrl
+		|| !sceneStamp(pair.after, channelSelection).imageUrl
+		|| ui.explain.classList.contains("busy");
+	if (explainKey && explainKey !== pairKey) hideExplanation();
 	if (granule.downloadUrl) {
 		ui.download.href = granule.downloadUrl;
 		ui.download.classList.remove("disabled");
@@ -789,6 +968,8 @@ function renderResults() {
 
 async function searchArea(boundsOverride) {
 	stopTimelinePlayback();
+	resetGeneratedInsights();
+	hideExplanation();
 	const thisRequest = ++requestNumber;
 	const studyArea = boundsOverride && customPlace ? customPlace : activeStudyArea();
 	const bounds = boundsOverride ?? (studyArea === customPlace ? customPlace.bounds : currentBounds());
@@ -1077,6 +1258,10 @@ ui.storyNext.addEventListener("click", () => {
 	storyStepIndex++;
 	renderStoryStep();
 });
+ui.storyDialog.addEventListener("close", () => {
+	storyAiNumber++;
+});
+ui.fieldNoteAi.addEventListener("click", generateGeminiFieldNote);
 ui.mapLayer.addEventListener("change", () => {
 	const selectedLayer = mapLayers[ui.mapLayer.value];
 	if (!selectedLayer) return;
@@ -1087,13 +1272,18 @@ ui.mapLayer.addEventListener("change", () => {
 ui.channel.addEventListener("change", () => {
 	selectedChannel = ui.channel.value;
 	compareMode = false;
+	resetGeneratedInsights();
 	renderSelection();
 });
 ui.explain.addEventListener("click", explainSelectedChange);
+ui.compareAI.addEventListener("click", generateGeminiComparison);
 ui.compare.addEventListener("click", () => {
 	if (granules.length < 2) return;
 	compareMode = !compareMode;
 	renderSelection();
+	if (!compareMode) {
+		clearCompareInsight();
+	}
 });
 ui.timelinePlay.addEventListener("click", () => {
 	if (timelineTimer !== null) {

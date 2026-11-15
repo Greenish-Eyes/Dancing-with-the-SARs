@@ -170,6 +170,9 @@
 								<details class="field-note">
 									<summary class="field-note-heading"><span>FIELD NOTE</span><span>INTERPRET WITH CARE</span></summary>
 									<p id="field-note-copy">Seasonal river levels may shape wetland extent. Compare calibrated backscatter before treating a visual difference as change.</p>
+									<p class="field-note-disclosure">On request, place context and the selected browse image are sent to Google Gemini for an AI-generated note.</p>
+									<button class="field-note-ai" id="field-note-ai" type="button">GENERATE A GEMINI FIELD NOTE</button>
+									<p class="field-note-ai-output" id="field-note-ai-output" role="status" aria-live="polite"></p>
 								</details>
 
 								<div class="scene-heading">
@@ -209,8 +212,11 @@
 								<div class="action-row">
 									<button class="compare-button" id="compare-button" type="button" disabled><span aria-hidden="true">◫</span> Compare passes</button>
 									<span class="compare-count" id="compare-count">—</span>
-									<button class="explain-button" id="explain-button" type="button" disabled><span class="explain-icon" aria-hidden="true">✦</span> Interpret</button>
+									<button class="explain-button" id="explain-button" type="button" disabled><span class="explain-icon" aria-hidden="true">✦</span> Explain this change</button>
 								</div>
+								<p class="ai-action-disclosure">AI comparison or explanation sends the selected place, pass dates, radar context, and browse images to Google Gemini.</p>
+								<button class="compare-ai" id="compare-ai" type="button" hidden>ASK GEMINI TO COMPARE THESE PASSES</button>
+								<div class="explain-panel hidden" id="compare-insight" role="status" aria-live="polite"></div>
 								<div class="explain-panel hidden" id="explain-panel" role="status" aria-live="polite"></div>
 
 								<details class="feed-section">
@@ -258,11 +264,17 @@
 				<button class="story-close" id="story-close" type="button" aria-label="Close guided tour">×</button>
 			</div>
 			<div class="story-progress" id="story-step-count"></div>
+			<p class="story-ai-privacy">If you request AI narration, the selected place, scene dates, radar context, and attached ASF browse images are sent to Google Gemini.</p>
 			<div class="story-body">
 				<div class="story-copy">
 					<span class="section-kicker" id="story-step-label"></span>
 					<h3 id="story-step-title"></h3>
 					<p id="story-step-copy" aria-live="polite"></p>
+					<div class="story-ai-note" hidden>
+						<span class="section-kicker">GEMINI FIELD NARRATION</span>
+						<p id="story-ai-copy"></p>
+					</div>
+					<div class="story-ai-status" id="story-ai-status" role="status" aria-live="polite"></div>
 					<ul class="story-hypotheses" id="story-hypotheses"></ul>
 				</div>
 				<figure class="story-media" id="story-media"></figure>

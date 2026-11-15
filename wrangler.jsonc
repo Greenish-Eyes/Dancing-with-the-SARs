@@ -12,12 +12,10 @@
 		"enabled": true
 	},
 	"vars": {
-		"GEOCODER_BASE_URL": "https://nominatim.openstreetmap.org"
+		"GEOCODER_BASE_URL": "https://nominatim.openstreetmap.org",
+		"GEMINI_MODEL": "gemini-3.8-flash"
 	},
 	"upload_source_maps": true,
-	"ai": {
-		"binding": "AI"
-	},
 	"kv_namespaces": [
 		{
 			"binding": "CACHE"
