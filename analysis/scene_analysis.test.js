@@ -1,0 +1,10 @@
+const A = require("../frontend/analysis.js");
+const mk = (id, cyc, trk, d, fr, date) => ({ id, title: `NISAR_L2_PR_GCOV_${cyc}_${trk}_${d}_${fr}_4020_SHNA_A_${date}T000000_${date}T000030_X05007_N_F_J_001`, timeStart: `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6)}T00:00:00Z`, footprint: [[-3,-60],[-3,-59],[-2,-59],[-2,-60]] });
+const g = [mk("a","001","005","A","219","20251102"), mk("b","002","005","A","219","20251114"), mk("c","002","120","D","300","20251120"), {id:"d", title:"weird", timeStart:"2025-12-01T00:00:00Z"}];
+const r = A.analyze(g);
+console.log(JSON.stringify(r, null, 1).slice(0, 900));
+console.assert(r.comparablePairs === 1 && r.medianRevisitDays === 12 && r.unparsed === 1);
+console.assert(A.comparablePrevious(g, g[1]).previous.id === "a");
+console.assert(A.comparablePrevious(g, g[2]).previous === null);
+console.assert(Math.abs(A.footprintAreaKm2(g[0].footprint) - 111.32*0.9986*110.57) < 50);
+console.log(A.toCsv(g, "x").split("\n")[1]); console.log(A.toGeoJson(g).features.length);

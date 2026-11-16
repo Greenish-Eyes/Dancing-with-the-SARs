@@ -511,7 +511,8 @@ function renderChannelOptions(granule) {
 
 function comparePair(granule) {
 	if (!granule) return null;
-	const previous = granules[granules.indexOf(granule) + 1];
+	const match = SurfaceAnalysis.comparablePrevious(granules, granule);
+	const previous = match.previous;
 	if (!previous) return null;
 	if (selectedChannel !== "quicklook") {
 		const beforeChannel = previous.browseChannels.find(
@@ -974,42 +975,47 @@ function renderSelection() {
 	renderPreview(granule);
 }
 
-function exportCurrentSceneCsv() {
-	if (!granules.length) return;
-	const rows = [
-		["date", "title", "site", "browse_url", "download_url", "west", "south", "east", "north"],
-		...granules.map((granule) => {
-			const points = granule.footprint ?? [];
-			const extents = points.length >= 4
-				? [
-					Math.min(...points.map((point) => point[1])),
-					Math.min(...points.map((point) => point[0])),
-					Math.max(...points.map((point) => point[1])),
-					Math.max(...points.map((point) => point[0])),
-				]
-				: ["", "", "", ""];
-			return [
-				granule.timeStart.slice(0, 10),
-				granule.title,
-				activeStudyArea().name,
-				granule.browseUrl ?? "",
-				granule.downloadUrl ?? "",
-				...extents,
-			];
-		}),
-	];
-	const csv = rows
-		.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-		.join("\n");
-	const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+function downloadText(text, name, type) {
+	const blob = new Blob([text], { type });
 	const link = document.createElement("a");
 	const url = URL.createObjectURL(blob);
 	link.href = url;
-	link.download = `surface-signals-${new Date().toISOString().slice(0, 10)}.csv`;
+	link.download = name;
 	document.body.append(link);
 	link.click();
 	link.remove();
 	URL.revokeObjectURL(url);
+}
+
+function exportCurrentSceneCsv() {
+	if (!granules.length) return;
+	downloadText(SurfaceAnalysis.toCsv(granules, activeStudyArea().name), `surface-signals-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv;charset=utf-8;");
+}
+
+function exportCurrentSceneGeoJson() {
+	if (!granules.length) return;
+	downloadText(JSON.stringify(SurfaceAnalysis.toGeoJson(granules), null, 1), `surface-signals-${new Date().toISOString().slice(0, 10)}.geojson`, "application/geo+json");
+}
+
+function renderAnalysis() {
+	const panel = document.getElementById("analysis-panel");
+	if (!panel) return;
+	const r = SurfaceAnalysis.analyze(granules);
+	if (!r.count) { panel.replaceChildren(); return; }
+	const stat = (label, value) => `<div class="metric-card"><span>${label}</span><strong>${value}</strong></div>`;
+	const max = Math.max(1, ...Object.values(r.monthly));
+	const bars = Object.entries(r.monthly).sort().map(([month, n]) =>
+		`<div title="${month}: ${n} pass(es)" style="flex:1;min-width:6px;display:flex;flex-direction:column;justify-content:flex-end"><i style="display:block;height:${Math.round((n / max) * 40)}px;background:#d3f074;opacity:.8"></i></div>`).join("");
+	const groups = r.groups.slice(0, 6).map((g) =>
+		`<li>${g.key} — ${g.count} pass${g.count === 1 ? "" : "es"}${g.medianRevisitDays !== null ? `, median repeat ${g.medianRevisitDays} d` : ""}</li>`).join("");
+	panel.innerHTML = `<div class="mission-brief-grid">
+		${stat("COMPARABLE PAIRS", r.comparablePairs)}
+		${stat("MEDIAN REPEAT", r.medianRevisitDays === null ? "—" : `${r.medianRevisitDays} d`)}
+		${stat("LONGEST GAP", r.maxGapDays === null ? "—" : `${r.maxGapDays} d`)}
+		${stat("MEDIAN FOOTPRINT", r.medianAreaKm2 === null ? "—" : `${r.medianAreaKm2.toLocaleString()} km²`)}</div>
+		<div style="display:flex;gap:2px;height:44px;align-items:flex-end;margin:10px 0" aria-label="Passes per month">${bars}</div>
+		<ul>${groups}</ul>
+		${r.warnings.map((w) => `<p class="mission-brief-question">⚠ ${w}</p>`).join("")}`;
 }
 
 function renderMissionBrief() {
@@ -1043,6 +1049,7 @@ function renderMissionBrief() {
 }
 
 function renderResults() {
+	renderAnalysis();
 	ui.sceneCount.textContent = String(granules.length).padStart(2, "0");
 	ui.panelSceneCount.textContent = String(granules.length).padStart(2, "0");
 	renderMissionBrief();
@@ -1403,6 +1410,7 @@ map.on("moveend", () => {
 	}
 });
 ui.exportGranules.addEventListener("click", exportCurrentSceneCsv);
+document.getElementById("export-geojson")?.addEventListener("click", exportCurrentSceneGeoJson);
 
 updateMapCenter();
 updateStory(sites[ui.site.value]);

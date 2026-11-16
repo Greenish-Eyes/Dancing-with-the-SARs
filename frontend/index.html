@@ -227,7 +227,8 @@
 								<div class="mission-brief" aria-live="polite">
 									<div class="mission-brief-header">
 										<span class="section-kicker">MISSION BRIEF</span>
-										<button class="export-button" id="export-granules" type="button">EXPORT CURRENT VIEW</button>
+										<button class="export-button" id="export-granules" type="button">EXPORT CSV</button>
+										<button class="export-button" id="export-geojson" type="button">EXPORT GEOJSON</button>
 									</div>
 									<div class="mission-brief-grid">
 										<div>
@@ -247,6 +248,7 @@
 										<span>FIELD QUESTION</span>
 										<strong id="mission-question"></strong>
 									</p>
+									<div id="analysis-panel" class="analysis-panel" aria-live="polite"></div>
 									<p id="mission-insight">Searching NASA CMR for NISAR GCOV scenes in this area and time window.</p>
 								</div>
 								<div class="inspector-bottom">
@@ -315,6 +317,7 @@
 			integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
 			crossorigin=""
 		></script>
+		<script src="/analysis.js" defer></script>
 		<script src="/app.js" defer></script>
 	</body>
 </html>
